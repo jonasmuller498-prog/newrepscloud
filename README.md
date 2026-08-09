@@ -8,7 +8,8 @@ Voxbone -> 51.255.71.124:32061 -> Asterisk -> 100@2.24.198.63:10069
 
 The dialplan accepts only `+18335167239` (with or without `+`) and has no
 general-purpose outbound route. Asterisk anchors RTP and negotiates PCMU/PCMA
-independently on each SIP leg.
+independently on each SIP leg. The Voxbone leg terminates SDES-SRTP while the
+IVR leg uses plain RTP.
 
 ## Deploy
 

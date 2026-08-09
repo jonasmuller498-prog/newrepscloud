@@ -40,6 +40,7 @@ data:
     disallow=all
     allow=ulaw,alaw
     direct_media=no
+    media_encryption=sdes
     rtp_symmetric=yes
     force_rport=yes
     rewrite_contact=yes
@@ -84,6 +85,7 @@ data:
     disallow=all
     allow=ulaw,alaw
     direct_media=no
+    media_encryption=sdes
     rtp_symmetric=yes
     force_rport=yes
     rewrite_contact=yes
