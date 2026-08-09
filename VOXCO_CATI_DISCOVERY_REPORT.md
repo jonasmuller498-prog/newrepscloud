@@ -268,6 +268,29 @@ Supports: one-shot or scheduled/recurring sends, batching (`DeliveryOptions`), M
 
 **Caution:** creating with a near-term `DeliveryDate` and a filter that matches respondents will send real SMS from `450-805-0693`.
 
+### From number (confirmed)
+
+All historical and newly created SMS distributions on this tenant use one sender:
+
+| Field | Value |
+|-------|-------|
+| **From number** | **`450-805-0693`** (Quebec / Canada NANP) |
+| SMS provider config IDs seen | **`7`** (most common), **`9`** (some campaigns) |
+
+No other `FromNumbers` values were found across 70+ distributions.
+
+### Live send test to +1 (832) 856-9022 (2026-08-09)
+
+| Step | Result |
+|------|--------|
+| Create respondent with phone `8328569022` / `+18328569022` | Success (survey `2427` respondent `2`, survey `2151` respondent `3`) |
+| `POST /distribution/sms` | Success — distributions **1240–1247** created |
+| Stored `FromNumbers` | Always normalized to **`450-805-0693`** |
+| `PUT /distribution/{id}/executeNow` | HTTP **200** (DeliveryDate moved to “now”) |
+| Respondent `PhoneStatus` after wait | Stayed **`3` = None (no SMS has been sent)** |
+
+**Conclusion:** the API can create/queue SMS campaigns and the configured sender is `450-805-0693`, but **the outbound SMS gateway did not mark the message as sent** during this test. Likely causes: SMS provider config inactive/expired on the demo tenant, SMS worker not processing, or carrier/account restriction. Check in Voxco UI under SMS / outgoing provider settings (configs 7 and 9), or ask Voxco ops to verify the SMS connector.
+
 ---
 
 ## Recommended next steps
