@@ -1,0 +1,13 @@
+# Secrets / local discovery artifacts
+.env
+*.key
+voxco_cati_discovery_results.json
+voxco_cati_discovery_output.log
+voxco_cati_followup_results.json
+user_surveys.json
+interviewer_login.html
+multimode_login.html
+voxco_swagger_paths.txt
+__pycache__/
+*.pyc
+.venv/
