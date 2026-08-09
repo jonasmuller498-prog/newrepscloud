@@ -16,7 +16,7 @@ data:
     exten => +18335167239,1,NoOp(Accepted configured Voxbone DID)
     same => n,Set(GROUP()=voxbone-inbound)
     same => n,GotoIf($[${GROUP_COUNT(voxbone-inbound)} > 4]?limit)
-    same => n,Dial(PJSIP/100@ivr,60)
+    same => n,Dial(PJSIP/101@ivr,60)
     same => n,NoOp(IVR result DIALSTATUS=${DIALSTATUS} HANGUPCAUSE=${HANGUPCAUSE})
     same => n,Hangup()
     same => n(limit),NoOp(Concurrent call limit exceeded)

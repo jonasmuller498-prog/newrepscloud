@@ -3,7 +3,7 @@
 Kubernetes manifests for the isolated Asterisk gateway used by:
 
 ```text
-Voxbone -> 51.255.71.124:32061 -> Asterisk -> 100@2.24.198.63:10069
+Voxbone -> 51.255.71.124:32061 -> Asterisk -> 101@2.24.198.63:10069
 ```
 
 The dialplan accepts only `+18335167239` (with or without `+`) and has no
