@@ -26,10 +26,11 @@ Accept: application/json
 Accept-Version: 1.0
 ```
 
-## Key finding
+## Key findings
 
 See [VOXCO_CATI_DISCOVERY_REPORT.md](./VOXCO_CATI_DISCOVERY_REPORT.md).
 
 - Survey WebAPI lives at `https://us1.voxco.com/api/` (Swagger: `/api/V1.0/swagger/docs`).
 - Interviewer / CATI UI lives at `https://us1intweb.voxco.com/Survey/Intweb.dll/vcc`.
 - Telephony license counters exist but were **MaxValue = 0** for this account at discovery time.
+- **SMS campaigns work:** `POST /api/distribution/sms` succeeded; tenant sender `450-805-0693`; 70+ historical SMS distributions found.

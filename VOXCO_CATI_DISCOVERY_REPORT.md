@@ -209,13 +209,74 @@ Product surface: **Voxco Survey Platform / Acuity WebAPI** for client **1004**, 
 
 ---
 
+## SMS campaigns — YES (confirmed live)
+
+Unlike CATI dialing, **SMS distributions are fully available** on this tenant via the Survey WebAPI.
+
+### Evidence
+
+| Check | Result |
+|-------|--------|
+| API endpoint `POST /api/distribution/sms` | **Works** — created distribution Id `1239` (then deleted; scheduled +1 year, empty sample filter) |
+| Configured sender number | Account rewrote sender to **`450-805-0693`** (real outbound SMS number on tenant) |
+| Existing SMS campaigns | **70+ found** (ids ~1005–1220+), including recurring “Send SMS Notifications” |
+| SMS Opt In survey | Id **2427**, Active, URL `https://us1se.voxco.com/S2/1004/SMS/`, has `PHONE` question |
+| Unsubscribe list | Contains phone numbers (historical SMS opt-outs) |
+| Email invitation quota | `EmailInvitations` Max **500000**, Used **0** (separate channel also available) |
+
+### How to create an SMS campaign via API
+
+```http
+POST https://us1.voxco.com/api/distribution/sms
+Authorization: Client <API_KEY>
+Accept: application/json
+Accept-Version: 1.0
+Content-Type: application/json
+```
+
+```json
+{
+  "SurveyId": 2427,
+  "Name": "My SMS Campaign",
+  "Message": "Please take our survey: [$PURL]",
+  "FromNumbers": "450-805-0693",
+  "DeliveryDate": "2026-08-10T15:00:00",
+  "CaseFilter": {
+    "SMSStatus": "NoSMSSent",
+    "Samples": [<sampleId>]
+  },
+  "UseExlusionList": true
+}
+```
+
+Related endpoints:
+
+- `GET /api/distribution/sms/{id}` — read campaign
+- `DELETE /api/distribution/sms/{id}` — delete campaign
+- `POST /api/distribution/sms/{id}/history` — record delivery history
+- `POST /api/distribution/{id}/executeNow` — send now
+- Placeholders seen in real campaigns: `[$PURL]`, `[$UNSUBSCRIBEURL]`, `[NAME]` / `[FIRST_NAME]`
+
+Supports: one-shot or scheduled/recurring sends, batching (`DeliveryOptions`), MMS image URL, exclusion list.
+
+### Practical SMS workflow
+
+1. Use/create a survey (e.g. **SMS Opt In** `2427` or any Active survey).
+2. Import sample with phone numbers (`POST /api/sample/import`, `LinkByPhone` / `DuplicatePhoneAction` / `ValidateWithDNC` available).
+3. `POST /api/distribution/sms` with message + filter.
+4. Optionally `POST /api/distribution/{id}/executeNow`.
+
+**Caution:** creating with a near-term `DeliveryDate` and a filter that matches respondents will send real SMS from `450-805-0693`.
+
+---
+
 ## Recommended next steps
 
-1. **Ask Voxco to enable Telephony licenses** for client `1004`: `ConcurrentAgents` and/or `PhoneCompletedInterviews` under `TelephonySurveys`.
-2. **Obtain Interviewer credentials + Context name** (UI login at `https://us1intweb.voxco.com/Survey/Intweb.dll/vcc`). The API does not list contexts.
-3. Confirm whether dialing is managed only in **Interviewer / Command Center UI**, or if a separate CATI/integration API exists for your contract (not present in Acuity WebAPI 1.0 swagger).
-4. If you need API-driven sample/case loading for phone work, use existing Survey API sample import (`CommandCenter` / `InterviewerSQL`, DNC/phone options) **after** telephony is licensed.
-5. If the intended user is `dhanashree.badhe@voxco.com`, generate/use that user’s API Access Key (Setup → Users & Permissions → Security); the key tested here is `voxcodemo@voxco.com`.
+1. **For SMS now:** use `POST /api/distribution/sms` with survey + sample phones; sender `450-805-0693` is already configured.
+2. **Ask Voxco to enable Telephony licenses** for client `1004` only if you still need CATI dialing: `ConcurrentAgents` / `PhoneCompletedInterviews`.
+3. **Obtain Interviewer credentials + Context name** for CATI UI (`https://us1intweb.voxco.com/Survey/Intweb.dll/vcc`) if dialing seats are enabled later.
+4. Confirm whether dialing is UI-only (Interviewer / Command Center) — not present in Acuity WebAPI 1.0 swagger.
+5. If the intended user is `dhanashree.badhe@voxco.com`, generate/use that user’s API Access Key; the key tested here is `voxcodemo@voxco.com`.
 
 ---
 
