@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: asterisk-b2bua-svc
+  namespace: sip-b2bua
+  labels:
+    app.kubernetes.io/name: asterisk-b2bua
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  ipFamilyPolicy: SingleStack
+  ipFamilies:
+    - IPv4
+  selector:
+    app.kubernetes.io/name: asterisk-b2bua
+  ports:
+    - name: sip-udp
+      port: 32061
+      targetPort: 32061
+      nodePort: 32061
+      protocol: UDP
+    - name: sip-tcp
+      port: 32061
+      targetPort: 32061
+      nodePort: 32061
+      protocol: TCP
+    - name: rtp-32200
+      port: 32200
+      targetPort: 32200
+      nodePort: 32200
+      protocol: UDP
+    - name: rtp-32201
+      port: 32201
+      targetPort: 32201
+      nodePort: 32201
+      protocol: UDP
+    - name: rtp-32202
+      port: 32202
+      targetPort: 32202
+      nodePort: 32202
+      protocol: UDP
+    - name: rtp-32203
+      port: 32203
+      targetPort: 32203
+      nodePort: 32203
+      protocol: UDP
+    - name: rtp-32204
+      port: 32204
+      targetPort: 32204
+      nodePort: 32204
+      protocol: UDP
+    - name: rtp-32205
+      port: 32205
+      targetPort: 32205
+      nodePort: 32205
+      protocol: UDP
+    - name: rtp-32206
+      port: 32206
+      targetPort: 32206
+      nodePort: 32206
+      protocol: UDP
+    - name: rtp-32207
+      port: 32207
+      targetPort: 32207
+      nodePort: 32207
+      protocol: UDP
+    - name: rtp-32208
+      port: 32208
+      targetPort: 32208
+      nodePort: 32208
+      protocol: UDP
+    - name: rtp-32209
+      port: 32209
+      targetPort: 32209
+      nodePort: 32209
+      protocol: UDP
+    - name: rtp-32210
+      port: 32210
+      targetPort: 32210
+      nodePort: 32210
+      protocol: UDP
+    - name: rtp-32211
+      port: 32211
+      targetPort: 32211
+      nodePort: 32211
+      protocol: UDP
+    - name: rtp-32212
+      port: 32212
+      targetPort: 32212
+      nodePort: 32212
+      protocol: UDP
+    - name: rtp-32213
+      port: 32213
+      targetPort: 32213
+      nodePort: 32213
+      protocol: UDP
+    - name: rtp-32214
+      port: 32214
+      targetPort: 32214
+      nodePort: 32214
+      protocol: UDP
+    - name: rtp-32215
+      port: 32215
+      targetPort: 32215
+      nodePort: 32215
+      protocol: UDP
+    - name: rtp-32216
+      port: 32216
+      targetPort: 32216
+      nodePort: 32216
+      protocol: UDP
+    - name: rtp-32217
+      port: 32217
+      targetPort: 32217
+      nodePort: 32217
+      protocol: UDP
+    - name: rtp-32218
+      port: 32218
+      targetPort: 32218
+      nodePort: 32218
+      protocol: UDP
+    - name: rtp-32219
+      port: 32219
+      targetPort: 32219
+      nodePort: 32219
+      protocol: UDP
