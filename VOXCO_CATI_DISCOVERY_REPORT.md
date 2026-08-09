@@ -1,0 +1,315 @@
+# Voxco CATI / Phone Dialing — API Discovery Report
+
+Base URL explored: `https://us1.voxco.com`  
+CATI / Interviewer host: `https://us1intweb.voxco.com`  
+Auth that works: `Authorization: Client <API_KEY>` (+ `Accept-Version: 1.0`, `Accept: application/json`)
+
+## Executive verdict
+
+**CATI/Interviewer Web exists on this tenant, but telephony dialing capacity is not licensed (quota = 0).**  
+The REST API on `us1.voxco.com` is the **Acuity Survey WebAPI** (online/multimode survey platform). It exposes phone-related *data* helpers and telephony license counters, but **no dialer/call-center control endpoints**.
+
+---
+
+## STEP 1 — Endpoint discovery
+
+| URL | Status | Notes |
+|-----|--------|-------|
+| `https://us1.voxco.com/api/` | **200 SUCCESS** | Swagger UI for **Acuity4 WebAPI**; discovery path `V1.0/swagger/docs` |
+| `https://us1.voxco.com/api/V1.0/swagger/docs` | **200 SUCCESS** | Full OpenAPI: 121 paths, title `Acuity.WebAPI 1.0` |
+| `https://us1.voxco.com/api/v1/` | 404 | Wrong version style (`v1` ≠ `V1.0` / unversioned resource paths) |
+| `https://us1.voxco.com/api/v2/` | 404 | Same |
+| `https://us1.voxco.com/A4S/api/v1/` | 404 | A4S is the Survey Platform UI, not this API root |
+| `https://us1.voxco.com/A4S/` | 200 (HTML) | Login — Voxco Survey Platform **7.4.26106.2** |
+| `https://us1.voxco.com/A4S/MultiMode` | 200 (HTML) | MultiMode login; asks for **Context** first |
+
+**Correct API shape:**
+
+```http
+GET https://us1.voxco.com/api/users/user
+Authorization: Client <API_KEY>
+Accept: application/json
+Accept-Version: 1.0
+```
+
+Not `/api/v1/surveys` — use `/api/users/user/surveys`, `/api/survey/{id}`, etc.
+
+---
+
+## STEP 2 — Surveys / phone fields
+
+| URL | Status |
+|-----|--------|
+| `/api/v1/surveys?mode=phone` | 404 |
+| `/api/v1/surveys?type=cati` | 404 |
+| `/api/v1/surveys` | 404 |
+| `/api/v2/surveys` | 404 |
+| **`/api/users/user/surveys`** | **200 SUCCESS** — **998 surveys** |
+| `/api/survey/{id}` | 200 for existing IDs |
+
+Survey objects expose: `Id`, `Name`, `FolderId`, `Status`, `Token`, `Link`, `UseS2`, `CustomProperties`, …  
+**No `mode` / `cati` / `dialer` / `telephony` fields** on the survey list payload.
+
+Links point at the online survey engine (`us1se.voxco.com/S2` or `/SE`), not the dialer.
+
+Surveys whose **names** mention CATI/phone (content/demos, not proof of dialer enablement):
+
+- `Personalized Quote Voxco CATI` (Id 1736)
+- `SDR CATI IVR AND DIALER QUIZ` (Id 1681)
+- `Testing phone numbers` (Id 2425)
+- `Mobile or cell phone survey template` (Id 1947)
+
+`GET /api/survey/metadata?surveyToken=...` returned `ClientId: 1004` but **no Mode field** in the live JSON (docs mention Mode can be Web/CATI).
+
+---
+
+## STEP 3 — CATI-specific REST paths
+
+All of these under `https://us1.voxco.com/api/v1/...` and `/api/v2/...` returned **404**:
+
+`cati/`, `dialer/`, `interviewer/`, `callcenter/`, `phone/`, `projects/`, `cases/`
+
+Swagger tags present: Analyze, Authentication, Distribution, Email, Library, **License**, Panel, Quotas, Respondent(s), Results, Salesforce, Sample, Survey, Users.  
+**No Dialer / CATI / CallCenter tag.**
+
+Phone-adjacent API capabilities that *do* exist:
+
+- Sample import formats: `CommandCenter`, `InterviewerSQL`
+- `ValidateWithDNC`, `DuplicatePhoneAction`, `LinkByPhone`
+- Panelist / unsubscribe `Phone` fields
+- License types: `ConcurrentAgents`, `PhoneCompletedInterviews` (category `TelephonySurveys`)
+
+---
+
+## STEP 4 — Licenses (critical)
+
+`GET /api/license/counter` → **200 SUCCESS**
+
+Telephony-related counters on this account:
+
+| CounterType | Category | MaxValue | Used | Remaining |
+|-------------|----------|----------|------|-----------|
+| **ConcurrentAgents** | TelephonySurveys | **0** | 0 | 0 |
+| **PhoneCompletedInterviews** | TelephonySurveys | **0** | 0 | 0 |
+
+Compare with online:
+
+| CounterType | Category | MaxValue | Used |
+|-------------|----------|----------|------|
+| ConcurrentRespondents | OnlineSurveys | 500 | 0 |
+| Responses | OnlineSurveys | 500000 | 137 |
+| MobileOfflineResponses | OfflineSurveys | 500000 | 17 |
+
+**Interpretation:** the platform knows about telephony licensing, but this tenant currently has **no CATI agent / phone-interview capacity** (`MaxValue = 0`).
+
+---
+
+## STEP 5 — User / permissions
+
+| URL | Status |
+|-----|--------|
+| `/api/v1/users/me` | 404 |
+| `/api/v1/users/current` | 404 |
+| `/api/v1/account/me` | 404 |
+| **`/api/users/user`** | **200 SUCCESS** |
+
+Authenticated user:
+
+```json
+{
+  "Id": 7,
+  "UserName": "voxcodemo@voxco.com",
+  "Email": "voxcodemo@voxco.com",
+  "DisplayName": "Administrator VoxcoServices",
+  "Title": "Administrator",
+  "Active": true,
+  "IsSystemUser": true,
+  "RemoteAgentPhoneNumber": null,
+  "DefaultAudioMonitoringProject": null
+}
+```
+
+Notes:
+
+- Key maps to **`voxcodemo@voxco.com`**, not `dhanashree.badhe@voxco.com`.
+- `RemoteAgentPhoneNumber` / `DefaultAudioMonitoringProject` are CATI-oriented user fields (both null).
+- No permission array listing `cati` / `dialer` / `callcenter` in this payload.
+- Client id from survey metadata: **1004**.
+
+---
+
+## STEP 6 — CATI server (`us1intweb.voxco.com`)
+
+| URL | Status | Notes |
+|-----|--------|-------|
+| `https://us1intweb.voxco.com/` | **200** | Redirects to Interviewer Web logon |
+| `https://us1intweb.voxco.com/Survey/Intweb.dll/vcc` | **200 SUCCESS** | **Interviewer Web Logon** + CATI logo |
+| `.../api/`, `.../Voxco.Web/api/`, `.../survey/api/` | 404 | No Survey WebAPI mirror here |
+| `.../survey/` | 403 | Directory listing forbidden |
+
+Interviewer login form fields:
+
+- `intid` — Username  
+- `passwd` — Password  
+- `context` — **Context**  
+- Hidden: `IMODE=3`, `iaction=17`  
+- Branding: `Images/Logos/cati_logo_green.png`  
+- Version: **Interviewer Web 7.4.26106.2**
+
+The Survey Platform API key does **not** unlock a REST dialer API on this host; access is the Interviewer Web UI (username / password / context).
+
+---
+
+## STEP 7 — Contexts / portals
+
+| URL | Status |
+|-----|--------|
+| `/api/v1/contexts` | 404 |
+| `/api/v1/portals` | 404 |
+| `/api/v1/organizations` | 404 |
+| `/api/v1/account` | 404 |
+
+Discovered outside those paths:
+
+- Survey Platform MultiMode login asks for **Context** (`/A4S/MultiMode`).
+- Interviewer Web login asks for **Context**.
+- Multi-context selector is present but disabled in HTML (`IsDisplayLoginMultiContextSelector=False`).
+- No context name list is exposed via this API key.
+- Related hosts: `us1.voxco.com` (platform/API), `us1intweb.voxco.com` (Interviewer/CATI UI), `us1se.voxco.com` (survey engine).
+
+---
+
+## What the API key can access
+
+Working auth: **`Authorization: Client ...`**
+
+Successful JSON/API access includes:
+
+- OpenAPI docs: `/api/V1.0/swagger/docs`
+- Current user: `/api/users/user`
+- Folders: `/api/users/user/folders`
+- Surveys list/detail: `/api/users/user/surveys`, `/api/survey/{id}`
+- Licenses: `/api/license/counter`, `/api/license/counter/{type}`
+- Survey token metadata: `/api/survey/metadata?surveyToken=...`
+
+Product surface: **Voxco Survey Platform / Acuity WebAPI** for client **1004**, admin system user `voxcodemo@voxco.com`.
+
+---
+
+## Is CATI/Phone dialing available?
+
+| Signal | Finding |
+|--------|---------|
+| Interviewer / CATI UI | **Yes** — live at `us1intweb.voxco.com` |
+| Telephony license capacity | **No** — `ConcurrentAgents` & `PhoneCompletedInterviews` max = **0** |
+| Dialer REST API on Survey WebAPI | **No** — not in swagger |
+| Online / offline survey API | **Yes** — fully usable |
+
+**Bottom line:** CATI software (Interviewer Web) is deployed, but this account does not currently have telephony dialing seats/interview quota. Dialing is not controllable through the Survey WebAPI key you provided.
+
+---
+
+## SMS campaigns — YES (confirmed live)
+
+Unlike CATI dialing, **SMS distributions are fully available** on this tenant via the Survey WebAPI.
+
+### Evidence
+
+| Check | Result |
+|-------|--------|
+| API endpoint `POST /api/distribution/sms` | **Works** — created distribution Id `1239` (then deleted; scheduled +1 year, empty sample filter) |
+| Configured sender number | Account rewrote sender to **`450-805-0693`** (real outbound SMS number on tenant) |
+| Existing SMS campaigns | **70+ found** (ids ~1005–1220+), including recurring “Send SMS Notifications” |
+| SMS Opt In survey | Id **2427**, Active, URL `https://us1se.voxco.com/S2/1004/SMS/`, has `PHONE` question |
+| Unsubscribe list | Contains phone numbers (historical SMS opt-outs) |
+| Email invitation quota | `EmailInvitations` Max **500000**, Used **0** (separate channel also available) |
+
+### How to create an SMS campaign via API
+
+```http
+POST https://us1.voxco.com/api/distribution/sms
+Authorization: Client <API_KEY>
+Accept: application/json
+Accept-Version: 1.0
+Content-Type: application/json
+```
+
+```json
+{
+  "SurveyId": 2427,
+  "Name": "My SMS Campaign",
+  "Message": "Please take our survey: [$PURL]",
+  "FromNumbers": "450-805-0693",
+  "DeliveryDate": "2026-08-10T15:00:00",
+  "CaseFilter": {
+    "SMSStatus": "NoSMSSent",
+    "Samples": [<sampleId>]
+  },
+  "UseExlusionList": true
+}
+```
+
+Related endpoints:
+
+- `GET /api/distribution/sms/{id}` — read campaign
+- `DELETE /api/distribution/sms/{id}` — delete campaign
+- `POST /api/distribution/sms/{id}/history` — record delivery history
+- `POST /api/distribution/{id}/executeNow` — send now
+- Placeholders seen in real campaigns: `[$PURL]`, `[$UNSUBSCRIBEURL]`, `[NAME]` / `[FIRST_NAME]`
+
+Supports: one-shot or scheduled/recurring sends, batching (`DeliveryOptions`), MMS image URL, exclusion list.
+
+### Practical SMS workflow
+
+1. Use/create a survey (e.g. **SMS Opt In** `2427` or any Active survey).
+2. Import sample with phone numbers (`POST /api/sample/import`, `LinkByPhone` / `DuplicatePhoneAction` / `ValidateWithDNC` available).
+3. `POST /api/distribution/sms` with message + filter.
+4. Optionally `POST /api/distribution/{id}/executeNow`.
+
+**Caution:** creating with a near-term `DeliveryDate` and a filter that matches respondents will send real SMS from `450-805-0693`.
+
+### From number (confirmed)
+
+All historical and newly created SMS distributions on this tenant use one sender:
+
+| Field | Value |
+|-------|-------|
+| **From number** | **`450-805-0693`** (Quebec / Canada NANP) |
+| SMS provider config IDs seen | **`7`** (most common), **`9`** (some campaigns) |
+
+No other `FromNumbers` values were found across 70+ distributions.
+
+### Live send test to +1 (832) 856-9022 (2026-08-09)
+
+| Step | Result |
+|------|--------|
+| Create respondent with phone `8328569022` / `+18328569022` | Success (survey `2427` respondent `2`, survey `2151` respondent `3`) |
+| `POST /distribution/sms` | Success — distributions **1240–1247** created |
+| Stored `FromNumbers` | Always normalized to **`450-805-0693`** |
+| `PUT /distribution/{id}/executeNow` | HTTP **200** (DeliveryDate moved to “now”) |
+| Respondent `PhoneStatus` after wait | Stayed **`3` = None (no SMS has been sent)** |
+
+**Conclusion:** the API can create/queue SMS campaigns and the configured sender is `450-805-0693`, but **the outbound SMS gateway did not mark the message as sent** during this test. Likely causes: SMS provider config inactive/expired on the demo tenant, SMS worker not processing, or carrier/account restriction. Check in Voxco UI under SMS / outgoing provider settings (configs 7 and 9), or ask Voxco ops to verify the SMS connector.
+
+---
+
+## Recommended next steps
+
+1. **For SMS now:** use `POST /api/distribution/sms` with survey + sample phones; sender `450-805-0693` is already configured.
+2. **Ask Voxco to enable Telephony licenses** for client `1004` only if you still need CATI dialing: `ConcurrentAgents` / `PhoneCompletedInterviews`.
+3. **Obtain Interviewer credentials + Context name** for CATI UI (`https://us1intweb.voxco.com/Survey/Intweb.dll/vcc`) if dialing seats are enabled later.
+4. Confirm whether dialing is UI-only (Interviewer / Command Center) — not present in Acuity WebAPI 1.0 swagger.
+5. If the intended user is `dhanashree.badhe@voxco.com`, generate/use that user’s API Access Key; the key tested here is `voxcodemo@voxco.com`.
+
+---
+
+## How to reproduce
+
+```bash
+export VOXCO_API_KEY='YOUR_KEY'
+python3 voxco_cati_discovery.py
+```
+
+Follow-up probes (real paths) are documented in this report; Swagger remains the source of truth:
+
+`https://us1.voxco.com/api/V1.0/swagger/docs`
