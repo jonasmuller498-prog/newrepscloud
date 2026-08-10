@@ -4,20 +4,33 @@ import (
 	"errors"
 	"strings"
 	"time"
-	"unicode"
+
+	"github.com/nyaruka/phonenumbers"
+)
+
+var errInvalidUSPhone = errors.New(
+	"phone_e164 must be a valid US number in canonical E.164 format (+1XXXXXXXXXX)",
 )
 
 func normalizeE164(input string) (string, error) {
-	value := strings.TrimSpace(input)
-	if len(value) < 9 || len(value) > 16 || value[0] != '+' || value[1] == '0' {
-		return "", errors.New("phone_e164 must be + followed by 8 to 15 digits")
+	if len(input) < 2 || input[0] != '+' {
+		return "", errInvalidUSPhone
 	}
-	for _, r := range value[1:] {
-		if !unicode.IsDigit(r) || r > unicode.MaxASCII {
-			return "", errors.New("phone_e164 contains non-ASCII digits")
+	for i := 1; i < len(input); i++ {
+		if input[i] < '0' || input[i] > '9' {
+			return "", errInvalidUSPhone
 		}
 	}
-	return value, nil
+	number, err := phonenumbers.Parse(input, "US")
+	if err != nil || number.GetCountryCode() != 1 ||
+		!phonenumbers.IsValidNumberForRegion(number, "US") {
+		return "", errInvalidUSPhone
+	}
+	normalized := phonenumbers.Format(number, phonenumbers.E164)
+	if normalized != input {
+		return "", errInvalidUSPhone
+	}
+	return normalized, nil
 }
 
 func maskPhone(phone string) string {

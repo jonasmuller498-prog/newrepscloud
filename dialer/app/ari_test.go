@@ -34,6 +34,7 @@ func TestARIOriginateRequest(t *testing.T) {
 		}
 		query := r.URL.Query()
 		if query.Get("endpoint") != "PJSIP/+14155552671@outbound" ||
+			query.Get("callerId") != "+14155550100" ||
 			query.Get("channelId") != "dialer-channel" ||
 			query.Get("app") != "broadcast" || query.Get("appArgs") != "attempt-id" {
 			t.Errorf("unexpected query: %v", query)

@@ -35,7 +35,7 @@ func parseRecipientCSV(r io.Reader, now time.Time) ([]ImportRow, error) {
 		}
 		phone, phoneErr := normalizeE164(record[0])
 		if phoneErr != nil {
-			return nil, fmt.Errorf("CSV line %d: invalid phone_e164", line)
+			return nil, fmt.Errorf("CSV line %d: %w", line, phoneErr)
 		}
 		timezone := strings.TrimSpace(record[1])
 		if err := validTimezone(timezone); err != nil {

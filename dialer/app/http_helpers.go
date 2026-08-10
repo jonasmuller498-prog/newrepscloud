@@ -52,6 +52,8 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeProblem(w, http.StatusNotFound, "not_found", "The requested resource was not found.")
 	case errors.Is(err, errConflict):
 		writeProblem(w, http.StatusConflict, "state_conflict", "The operation is invalid in the current state.")
+	case errors.Is(err, errInvalidUSPhone):
+		writeProblem(w, http.StatusBadRequest, "invalid_us_phone", errInvalidUSPhone.Error())
 	case errors.Is(err, errSafetyBlocked):
 		writeProblem(w, http.StatusConflict, "safety_blocked", "A compliance or safety requirement failed.")
 	case errors.Is(err, errForbidden):
