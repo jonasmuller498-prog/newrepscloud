@@ -62,8 +62,9 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn(setting, defaults)
         fixed = {
             "HTTP_ADDR=:8080", "METRICS_ADDR=:9090", "MEDIA_DIR=/media",
+            "EVENT_JOURNAL_DIR=/media/ari-journal",
             "ARI_URL=http://127.0.0.1:8088/ari", "ARI_APP=voice-dialer",
-            "ARI_ENDPOINT=PJSIP/%s@outbound",
+            "ARI_ENDPOINT=outbound",
         }
         self.assertTrue(fixed.issubset(set(defaults.splitlines())))
         self.assertEqual(env_keys("base/secrets/app.env.example"), {
@@ -98,6 +99,9 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("runAsUser: 1000", app)
         self.assertIn("runAsUser: 1000", asterisk)
         self.assertIn("mountPath: /media", app)
+        init = read("base/engine/statefulset-init.yaml")
+        self.assertIn("mkdir -p /media/ari-journal", init)
+        self.assertIn("name: prepare-shared-storage", init)
         self.assertIn("mountPath: /var/lib/asterisk/sounds/campaigns", asterisk)
         services = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("service-*.yaml"))
         self.assertNotIn("8088", services)
@@ -135,6 +139,21 @@ class DeploymentTests(unittest.TestCase):
         carrier = read("base/network/carrier-ingress.yaml")
         self.assertIn("port: 32300", carrier)
         self.assertIn("endPort: 32499", carrier)
+
+    def test_monitoring_rules_use_exported_private_metrics(self):
+        metrics = (ROOT.parent / "app/metrics.go").read_text()
+        rules = read("optional/monitoring/prometheusrule.yaml")
+        names = {
+            "dialer_scheduler_enabled", "dialer_slot_mismatch",
+            "dialer_cps_throttled_total", "dialer_sip_attempts_total",
+            "dialer_opt_out_persistence_failures_total",
+        }
+        for name in names:
+            self.assertIn(name, metrics)
+            self.assertIn(name, rules)
+        self.assertIn('result=\\"accepted\\"', metrics)
+        self.assertIn('result=\\"failed\\"', metrics)
+        self.assertNotIn("dialer-metrics", read("base/ingress.yaml"))
 
     def test_all_workload_images_are_tag_and_digest_pinned(self):
         image_re = re.compile(r"^\s*image:\s+\S+:[^@\s]+@sha256:[0-9a-f]{64}\s*$")

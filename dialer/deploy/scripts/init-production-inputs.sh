@@ -62,9 +62,9 @@ fi
 printf '%s\n' \
   'DIALING_ENABLED=false' 'CPS=0' 'MAX_CONCURRENCY=20' \
   'HTTP_ADDR=:8080' 'METRICS_ADDR=:9090' \
-  'MEDIA_DIR=/media' \
+  'MEDIA_DIR=/media' 'EVENT_JOURNAL_DIR=/media/ari-journal' \
   'ARI_URL=http://127.0.0.1:8088/ari' \
-  'ARI_APP=voice-dialer' 'ARI_ENDPOINT=PJSIP/%s@outbound' \
+  'ARI_APP=voice-dialer' 'ARI_ENDPOINT=outbound' \
   'DIALER_SOURCE_REPOSITORY=https://github.com/jonasmuller498-prog/newrepscloud.git' \
   "DIALER_SOURCE_REF=${source_ref,,}" >"$out/runtime.env"
 printf '%s\n' "TRUNK_SIGNAL_CIDR=$signal_cidr" \

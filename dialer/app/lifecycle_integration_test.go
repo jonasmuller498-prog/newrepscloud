@@ -15,10 +15,13 @@ func TestARIEventReplayAndOptOutSlotRetention(t *testing.T) {
 	startRaw := []byte(`{"type":"StasisStart","channel":{"id":"` +
 		attempt.ChannelID + `","state":"Up"}}`)
 	start, _ := parseARIEvent(startRaw)
-	if _, inserted, applyErr := store.ApplyARIEvent(ctx, start, startRaw); applyErr != nil || !inserted {
+	key := start.Key(startRaw)
+	if _, inserted, applyErr := store.ApplyARIEventWithKey(
+		ctx, start, key); applyErr != nil || !inserted {
 		t.Fatalf("first event inserted=%v err=%v", inserted, applyErr)
 	}
-	if _, inserted, applyErr := store.ApplyARIEvent(ctx, start, startRaw); applyErr != nil || inserted {
+	if _, inserted, applyErr := store.ApplyARIEventWithKey(
+		ctx, start, key); applyErr != nil || inserted {
 		t.Fatalf("replay inserted=%v err=%v", inserted, applyErr)
 	}
 	var state, playbackID string

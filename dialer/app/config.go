@@ -6,23 +6,24 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	HTTPAddr, MetricsAddr, DatabaseURL, MediaDir string
-	ARIURL, ARIApp, ARIUser, ARIPassword         string
-	ARIEndpoint, OperatorToken, ApproverToken    string
-	PhoneHashKey, FieldEncryptionKey             []byte
-	AuditHMACKey                                 []byte
-	DialingEnabled                               bool
-	MaxConcurrency                               int
-	CPS                                          float64
-	WindowStart, WindowEnd                       time.Duration
-	AssetMaxDuration                             time.Duration
-	MaxBodyBytes                                 int64
+	HTTPAddr, MetricsAddr, DatabaseURL, MediaDir, EventJournalDir string
+	ARIURL, ARIApp, ARIUser, ARIPassword                          string
+	ARIEndpoint, OperatorToken, ApproverToken                     string
+	PhoneHashKey, FieldEncryptionKey                              []byte
+	AuditHMACKey                                                  []byte
+	DialingEnabled                                                bool
+	MaxConcurrency                                                int
+	CPS                                                           float64
+	WindowStart, WindowEnd                                        time.Duration
+	AssetMaxDuration                                              time.Duration
+	MaxBodyBytes                                                  int64
 }
 
 func LoadConfig() (Config, error) { return loadConfig(os.LookupEnv) }
@@ -33,6 +34,7 @@ func loadConfig(get func(string) (string, bool)) (Config, error) {
 		MetricsAddr:      value(get, "METRICS_ADDR", ":9090"),
 		DatabaseURL:      value(get, "DATABASE_URL", ""),
 		MediaDir:         value(get, "MEDIA_DIR", "/var/lib/dialer/media"),
+		EventJournalDir:  value(get, "EVENT_JOURNAL_DIR", ""),
 		ARIURL:           strings.TrimRight(value(get, "ARI_URL", ""), "/"),
 		ARIApp:           value(get, "ARI_APP", ""),
 		ARIUser:          value(get, "ARI_USER", ""),
@@ -106,6 +108,10 @@ func (c Config) Validate() error {
 		if c.ARIURL == "" || c.ARIApp == "" || c.ARIUser == "" ||
 			c.ARIPassword == "" || !validEndpointName(c.ARIEndpoint) {
 			return errors.New("ARI settings are required when dialing is enabled")
+		}
+		if !filepath.IsAbs(c.EventJournalDir) ||
+			filepath.Clean(c.EventJournalDir) == "/" {
+			return errors.New("EVENT_JOURNAL_DIR must be a non-root absolute path when dialing is enabled")
 		}
 		u, err := url.Parse(c.ARIURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||

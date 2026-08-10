@@ -9,6 +9,15 @@ import (
 func (s *Store) ApplyARIEvent(
 	ctx context.Context, event ARIEvent, raw []byte,
 ) (attemptID string, inserted bool, err error) {
+	return s.ApplyARIEventWithKey(ctx, event, event.Key(raw))
+}
+
+func (s *Store) ApplyARIEventWithKey(
+	ctx context.Context, event ARIEvent, eventKey string,
+) (attemptID string, inserted bool, err error) {
+	if !validEventKey(eventKey) {
+		return "", false, errUnsafeARIEvent
+	}
 	channelID := event.ChannelID()
 	if channelID == "" {
 		return "", false, errNotFound
@@ -33,7 +42,7 @@ func (s *Store) ApplyARIEvent(
 	tag, err := tx.Exec(ctx, `INSERT INTO call_events
 		(attempt_id,ari_event_id,event_type,raw) VALUES($1,$2,$3,$4)
 		ON CONFLICT(attempt_id,ari_event_id) WHERE ari_event_id IS NOT NULL DO NOTHING`,
-		attemptID, event.Key(raw), event.Type, event.SafeJSON())
+		attemptID, eventKey, event.Type, event.SafeJSON())
 	if err != nil {
 		return "", false, err
 	}
@@ -45,7 +54,7 @@ func (s *Store) ApplyARIEvent(
 	}
 	_, err = tx.Exec(ctx, `UPDATE call_events SET processed_at=now()
 		WHERE attempt_id=$1 AND ari_event_id=$2`,
-		attemptID, event.Key(raw))
+		attemptID, eventKey)
 	if err != nil {
 		return "", false, err
 	}

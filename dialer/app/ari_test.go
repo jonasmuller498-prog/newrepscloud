@@ -11,7 +11,7 @@ import (
 func ariTestConfig(serverURL string) Config {
 	return Config{
 		ARIURL: serverURL, ARIApp: "broadcast", ARIUser: "ari-user",
-		ARIPassword: "ari-pass", ARIEndpoint: "carrier",
+		ARIPassword: "ari-pass", ARIEndpoint: "outbound",
 	}
 }
 
@@ -33,7 +33,7 @@ func TestARIOriginateRequest(t *testing.T) {
 			t.Error("missing ARI basic authentication")
 		}
 		query := r.URL.Query()
-		if query.Get("endpoint") != "PJSIP/+14155552671@carrier" ||
+		if query.Get("endpoint") != "PJSIP/+14155552671@outbound" ||
 			query.Get("channelId") != "dialer-channel" ||
 			query.Get("app") != "broadcast" || query.Get("appArgs") != "attempt-id" {
 			t.Errorf("unexpected query: %v", query)

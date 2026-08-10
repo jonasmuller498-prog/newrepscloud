@@ -8,11 +8,12 @@ import (
 
 type DependencyGate struct {
 	ariConnected atomic.Bool
+	journalReady atomic.Bool
 	mediaReady   atomic.Bool
 }
 
 func (g *DependencyGate) ReadyForDial() bool {
-	return g.ariConnected.Load() && g.mediaReady.Load()
+	return g.ariConnected.Load() && g.journalReady.Load() && g.mediaReady.Load()
 }
 
 func checkMediaDirectory(dir string) bool {

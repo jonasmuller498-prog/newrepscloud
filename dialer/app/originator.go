@@ -84,14 +84,28 @@ func (o *Originator) process(ctx context.Context, item OutboxItem) error {
 
 func (o *Originator) processOriginate(ctx context.Context, item OutboxItem) error {
 	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
-	command, permitted, _, err := o.store.PrepareOriginate(dbCtx, item)
+	command, permitted, retryAt, err := o.store.PrepareOriginate(dbCtx, item)
 	cancel()
-	if err != nil || !permitted {
+	if err != nil {
 		return err
+	}
+	if !permitted {
+		if !retryAt.IsZero() {
+			o.metrics.cpsThrottled.Add(1)
+		}
+		return nil
 	}
 	callCtx, callCancel := context.WithTimeout(ctx, 15*time.Second)
 	result, callErr := o.client.Originate(callCtx, command)
 	callCancel()
+	if result.Accepted {
+		o.metrics.sipAccepted.Add(1)
+	} else {
+		o.metrics.sipFailed.Add(1)
+		if result.Uncertain {
+			o.metrics.quarantined.Add(1)
+		}
+	}
 	dbCtx, cancel = context.WithTimeout(ctx, defaultDBTimeout)
 	compensate, err := o.store.CompleteOriginate(dbCtx, item, result)
 	cancel()
@@ -102,14 +116,6 @@ func (o *Originator) processOriginate(ctx context.Context, item OutboxItem) erro
 		hangCtx, hangCancel := context.WithTimeout(ctx, 10*time.Second)
 		_, _ = o.client.Hangup(hangCtx, command.ChannelID)
 		hangCancel()
-	}
-	if result.Accepted {
-		o.metrics.originatesAccepted.Add(1)
-	} else {
-		o.metrics.originatesFailed.Add(1)
-		if result.Uncertain {
-			o.metrics.quarantined.Add(1)
-		}
 	}
 	return callErr
 }

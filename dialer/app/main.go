@@ -45,11 +45,17 @@ func run(log *slog.Logger) error {
 	gate.mediaReady.Store(store.MediaReady(startup))
 	metrics := &Metrics{}
 	ari := NewARIClient(config)
+	journal := NewEventJournal(config.EventJournalDir)
 	scheduler := &Scheduler{store, gate, metrics, log}
 	originator := &Originator{
 		store: store, config: config, client: ari, gate: gate, metrics: metrics, log: log,
 	}
-	consumer := &ARIConsumer{store, ari, gate, metrics, log}
+	processor := &ARIEventProcessor{
+		store: store, client: ari, journal: journal, gate: gate, metrics: metrics, log: log,
+	}
+	consumer := &ARIConsumer{
+		store: store, client: ari, processor: processor, config: config, gate: gate, log: log,
+	}
 	reconciler := &Reconciler{store, ari, gate, log}
 	importer := &ImportWorker{store: store, log: log}
 	go scheduler.Run(root)
