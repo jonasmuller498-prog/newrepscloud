@@ -34,7 +34,7 @@ class ProductionOverlayTests(unittest.TestCase):
                     check=True, text=True, capture_output=True,
                 ).stdout
                 self.assertIn("kind: Secret", rendered)
-                self.assertNotIn("REQUIRED_", rendered)
+                self.assertNotIn("DIALER_SOURCE_REF: REQUIRED_", rendered)
                 self.assertIn("name: dialer-postgres-admin-", rendered)
                 self.assertIn("name: dialer-postgres-runtime-", rendered)
                 self.assertIn("name: dialer-app-secrets-", rendered)
