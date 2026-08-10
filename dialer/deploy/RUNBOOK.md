@@ -187,17 +187,10 @@ carrier, CPS, and backup gates. Never exceed `MAX_CONCURRENCY=100`; default is
 `20`.
 
 ## Emergency pause and rollback
-
-Use the campaign pause action first when the API is healthy. It releases claimed
-work, terminates all in-flight channels, requeues only unanswered calls, and
-quarantines answered or message-started calls to prevent duplicate playback.
-
-Set `DIALING_ENABLED=false` and `CPS=0`, render, and apply. If scheduler behavior
-is suspect, also set `DIALER_TRUNK_ENABLED=false`; this removes the endpoint
-after the pod rolls. Preserve logs and database evidence. Roll back application
-code only to another reviewed 40-character commit and keep schema compatibility
-in mind. Preserve `/media/ari-journal`; pending or malformed records are
-operator-action evidence and must not be discarded to recover readiness.
-Both singleton PDBs use `minAvailable: 1`, so voluntary eviction is blocked
-until the operator plans downtime. StatefulSet ordered replacement prevents
-two engine pods from contending for the RWO media claim.
+Use campaign pause first: it releases claims, terminates in-flight channels,
+requeues unanswered calls, and quarantines answered calls to prevent duplicates.
+For a platform stop, set `DIALING_ENABLED=false`, `CPS=0`, and, if needed,
+`DIALER_TRUNK_ENABLED=false`; render and apply, then preserve logs and database evidence.
+Roll back only to a reviewed 40-character commit. Never discard `/media/ari-journal`
+records to recover readiness. Both singleton PDBs use `minAvailable: 1`, and ordered
+StatefulSet replacement prevents two engine pods from contending for the RWO media claim.
