@@ -15,6 +15,12 @@ type Metrics struct {
 	leader             atomic.Bool
 }
 
+func NewMetricsAPI(store *Store, gate *DependencyGate, metrics *Metrics) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", metrics.Handler(store, gate))
+	return mux
+}
+
 func (m *Metrics) Handler(store *Store, gate *DependencyGate) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var queued, active int64

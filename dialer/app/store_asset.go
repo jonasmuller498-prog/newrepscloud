@@ -55,20 +55,17 @@ func (s *Store) SaveAsset(
 }
 
 func writeMediaFile(dir, name string, data []byte) error {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 	path := filepath.Join(dir, filepath.Base(name))
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	}
 	file, err := os.CreateTemp(dir, ".upload-*")
 	if err != nil {
 		return err
 	}
 	temp := file.Name()
 	defer os.Remove(temp)
-	if err = file.Chmod(0600); err == nil {
+	if err = file.Chmod(0640); err == nil {
 		_, err = file.Write(data)
 	}
 	if err == nil {
@@ -81,8 +78,8 @@ func writeMediaFile(dir, name string, data []byte) error {
 	if closeErr != nil {
 		return closeErr
 	}
-	if err = os.Rename(temp, path); err != nil && !os.IsExist(err) {
+	if err = os.Rename(temp, path); err != nil {
 		return err
 	}
-	return nil
+	return os.Chmod(path, 0640)
 }

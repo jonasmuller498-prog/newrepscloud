@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 func newUUID() (string, error) {
@@ -24,6 +25,10 @@ func attemptUUID(campaignRecipientID string, attemptNo int) string {
 	b[6] = (b[6] & 0x0f) | 0x50
 	b[8] = (b[8] & 0x3f) | 0x80
 	return formatUUID(b)
+}
+
+func deterministicPlaybackID(attemptID string) string {
+	return "play-" + strings.ReplaceAll(attemptID, "-", "")
 }
 
 func formatUUID(b [16]byte) string {

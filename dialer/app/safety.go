@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -11,10 +9,13 @@ func (s *Store) CampaignSafetyBlocks(
 	ctx context.Context, id string, requireApproval bool, now time.Time,
 ) ([]SafetyBlock, error) {
 	var assetID, callerID, storage *string
+	var mediaSHA []byte
+	var mediaBytes, mediaDuration int64
 	var dnc, authorized *time.Time
 	var recipients, missingConsent, suppressed int64
 	err := s.pool.QueryRow(ctx, `SELECT c.message_asset_id,c.caller_id_id,c.dnc_attested_at,
-		ci.authorized_at,ma.storage_name,
+		ci.authorized_at,ma.storage_name,COALESCE(ma.sha256,''::bytea),
+		COALESCE(ma.byte_size,0),COALESCE(ma.duration_ms,0),
 		(SELECT count(*) FROM campaign_recipients cr JOIN recipients r ON r.id=cr.recipient_id
 		  WHERE cr.campaign_id=c.id AND cr.status='QUEUED'
 		  AND NOT EXISTS(SELECT 1 FROM suppressions sp WHERE sp.phone_hash=r.phone_hash)),
@@ -28,6 +29,7 @@ func (s *Store) CampaignSafetyBlocks(
 		LEFT JOIN caller_ids ci ON ci.id=c.caller_id_id
 		LEFT JOIN message_assets ma ON ma.id=c.message_asset_id WHERE c.id=$1`, id).
 		Scan(&assetID, &callerID, &dnc, &authorized, &storage,
+			&mediaSHA, &mediaBytes, &mediaDuration,
 			&recipients, &missingConsent, &suppressed)
 	if err != nil {
 		return nil, dbError(err)
@@ -39,9 +41,10 @@ func (s *Store) CampaignSafetyBlocks(
 	if assetID == nil || storage == nil {
 		add("audio_missing", "A validated WAV message asset is required.", 0)
 	} else {
-		info, statErr := os.Stat(filepath.Join(s.config.MediaDir, filepath.Base(*storage)))
-		if statErr != nil || !info.Mode().IsRegular() {
-			add("audio_unavailable", "The approved message asset is unavailable.", 0)
+		spec := MediaSpec{*storage, mediaSHA, mediaBytes, mediaDuration}
+		if _, verifyErr := verifyMediaFile(s.config.MediaDir, spec,
+			s.config.AssetMaxDuration, s.config.MaxBodyBytes); verifyErr != nil {
+			add("audio_tampered", "The approved message asset failed integrity validation.", 0)
 		}
 	}
 	if callerID == nil || authorized == nil || authorized.After(now.Add(5*time.Minute)) {

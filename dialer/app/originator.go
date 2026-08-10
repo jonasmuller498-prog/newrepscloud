@@ -2,15 +2,27 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
 )
 
+type deliveryStore interface {
+	ClaimOutbox(context.Context) (*OutboxItem, error)
+	ResetOutbox(context.Context, string) error
+	PrepareOriginate(context.Context, OutboxItem) (OriginateCommand, bool, time.Time, error)
+	CompleteOriginate(context.Context, OutboxItem, OriginateResult) (bool, error)
+	PreparePlay(context.Context, OutboxItem) (PlayCommand, error)
+	CompletePlay(context.Context, OutboxItem, OriginateResult) error
+	LoadHangupChannel(context.Context, OutboxItem) (string, error)
+	CompleteHangup(context.Context, OutboxItem, OriginateResult) error
+	DeferOutbox(context.Context, string, time.Time) error
+}
+
 type Originator struct {
-	store   *Store
-	client  *ARIClient
+	store   deliveryStore
+	config  Config
+	client  ARICommands
 	gate    *DependencyGate
 	metrics *Metrics
 	log     *slog.Logger
@@ -18,7 +30,7 @@ type Originator struct {
 
 func (o *Originator) Run(ctx context.Context) {
 	var workers sync.WaitGroup
-	for i := 0; i < o.store.config.MaxConcurrency; i++ {
+	for i := 0; i < o.config.MaxConcurrency; i++ {
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
@@ -30,7 +42,7 @@ func (o *Originator) Run(ctx context.Context) {
 
 func (o *Originator) worker(ctx context.Context) {
 	for ctx.Err() == nil {
-		if !o.store.config.DialingEnabled || !o.gate.ReadyForDial() {
+		if !o.config.DialingEnabled || !o.gate.ReadyForDial() {
 			waitContext(ctx, 250*time.Millisecond)
 			continue
 		}
@@ -50,39 +62,97 @@ func (o *Originator) worker(ctx context.Context) {
 			_ = o.store.ResetOutbox(ctx, item.ID)
 			continue
 		}
-		loadCtx, loadCancel := context.WithTimeout(ctx, defaultDBTimeout)
-		command, err := o.store.LoadOriginateCommand(loadCtx, item.AttemptID)
-		loadCancel()
-		if err != nil {
-			if !errors.Is(err, errNotFound) {
-				o.gate.mediaReady.Store(false)
-				o.log.Error("originate prerequisites unavailable", "error", err)
-			}
-			_ = o.store.ResetOutbox(ctx, item.ID)
-			waitContext(ctx, 100*time.Millisecond)
-			continue
-		}
-		callCtx, callCancel := context.WithTimeout(ctx, 15*time.Second)
-		result, originateErr := o.client.Originate(callCtx, command)
-		callCancel()
-		completeCtx, completeCancel := context.WithTimeout(ctx, defaultDBTimeout)
-		completeErr := o.store.CompleteOriginate(completeCtx, *item, result)
-		completeCancel()
-		if completeErr != nil {
-			o.log.Error("originate result persistence failed", "error", completeErr)
-			continue
-		}
-		if result.Accepted {
-			o.metrics.originatesAccepted.Add(1)
-		} else {
-			o.metrics.originatesFailed.Add(1)
-			if result.Uncertain {
-				o.metrics.quarantined.Add(1)
-			}
-			o.log.Warn("ARI originate rejected", "outcome", result.Outcome,
-				"error", originateErr)
+		if err = o.process(ctx, *item); err != nil {
+			o.log.Error("ARI action failed", "kind", item.Kind, "error", err)
+			_ = o.store.DeferOutbox(ctx, item.ID, time.Now().Add(time.Second))
 		}
 	}
+}
+
+func (o *Originator) process(ctx context.Context, item OutboxItem) error {
+	switch item.Kind {
+	case "ARI_ORIGINATE":
+		return o.processOriginate(ctx, item)
+	case "ARI_PLAY":
+		return o.processPlay(ctx, item)
+	case "ARI_HANGUP":
+		return o.processHangup(ctx, item)
+	default:
+		return errConflict
+	}
+}
+
+func (o *Originator) processOriginate(ctx context.Context, item OutboxItem) error {
+	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+	command, permitted, _, err := o.store.PrepareOriginate(dbCtx, item)
+	cancel()
+	if err != nil || !permitted {
+		return err
+	}
+	callCtx, callCancel := context.WithTimeout(ctx, 15*time.Second)
+	result, callErr := o.client.Originate(callCtx, command)
+	callCancel()
+	dbCtx, cancel = context.WithTimeout(ctx, defaultDBTimeout)
+	compensate, err := o.store.CompleteOriginate(dbCtx, item, result)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if compensate && result.Accepted {
+		hangCtx, hangCancel := context.WithTimeout(ctx, 10*time.Second)
+		_, _ = o.client.Hangup(hangCtx, command.ChannelID)
+		hangCancel()
+	}
+	if result.Accepted {
+		o.metrics.originatesAccepted.Add(1)
+	} else {
+		o.metrics.originatesFailed.Add(1)
+		if result.Uncertain {
+			o.metrics.quarantined.Add(1)
+		}
+	}
+	return callErr
+}
+
+func (o *Originator) processPlay(ctx context.Context, item OutboxItem) error {
+	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+	command, err := o.store.PreparePlay(dbCtx, item)
+	cancel()
+	var result OriginateResult
+	if err == nil {
+		callCtx, callCancel := context.WithTimeout(ctx, 10*time.Second)
+		result, err = o.client.Play(callCtx, command.ChannelID,
+			command.PlaybackID, command.MediaSHA)
+		callCancel()
+	} else {
+		result = OriginateResult{Outcome: "ambiguous"}
+	}
+	dbCtx, cancel = context.WithTimeout(ctx, defaultDBTimeout)
+	completeErr := o.store.CompletePlay(dbCtx, item, result)
+	cancel()
+	if completeErr != nil {
+		return completeErr
+	}
+	return err
+}
+
+func (o *Originator) processHangup(ctx context.Context, item OutboxItem) error {
+	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+	channelID, err := o.store.LoadHangupChannel(dbCtx, item)
+	cancel()
+	if err != nil {
+		return err
+	}
+	callCtx, callCancel := context.WithTimeout(ctx, 10*time.Second)
+	result, callErr := o.client.Hangup(callCtx, channelID)
+	callCancel()
+	dbCtx, cancel = context.WithTimeout(ctx, defaultDBTimeout)
+	err = o.store.CompleteHangup(dbCtx, item, result)
+	cancel()
+	if err != nil {
+		return err
+	}
+	return callErr
 }
 
 func waitContext(ctx context.Context, duration time.Duration) {

@@ -111,54 +111,9 @@ func (s *Store) StartCampaign(
 }
 
 func (s *Store) PauseCampaign(ctx context.Context, id, actor string) error {
-	return s.transitionCampaign(ctx, id, "PAUSED", actor, "campaign.pause", "RUNNING")
+	return s.stopCampaignDelivery(ctx, id, actor, true)
 }
 
 func (s *Store) CancelCampaign(ctx context.Context, id, actor string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	var state string
-	if err = tx.QueryRow(ctx, "SELECT state FROM campaigns WHERE id=$1 FOR UPDATE", id).Scan(&state); err != nil {
-		return dbError(err)
-	}
-	if !canTransition(state, "DRAINING") {
-		return errConflict
-	}
-	if _, err = tx.Exec(ctx, "UPDATE campaigns SET state='DRAINING',updated_at=now() WHERE id=$1", id); err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx, `UPDATE campaign_recipients SET status='CANCELLED'
-		WHERE campaign_id=$1 AND status='QUEUED'`, id)
-	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE call_attempts a SET state='CANCELLED',outcome='cancelled',
-			ended_at=now(),updated_at=now() FROM campaign_recipients cr
-			WHERE a.campaign_recipient_id=cr.id AND cr.campaign_id=$1 AND a.state='CLAIMED'`, id)
-	}
-	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE campaign_recipients cr SET status='CANCELLED'
-			WHERE cr.campaign_id=$1 AND cr.status='ACTIVE' AND NOT EXISTS(
-			SELECT 1 FROM call_attempts a WHERE a.campaign_recipient_id=cr.id
-			AND a.state IN ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED'))`, id)
-	}
-	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE dialer_slots SET attempt_id=NULL,leased_at=NULL
-			WHERE attempt_id IN (SELECT a.id FROM call_attempts a JOIN campaign_recipients cr
-			ON cr.id=a.campaign_recipient_id WHERE cr.campaign_id=$1 AND a.state='CANCELLED')`, id)
-	}
-	if err == nil {
-		_, err = tx.Exec(ctx, `UPDATE outbox SET state='DONE',processed_at=now()
-			WHERE state='PENDING' AND aggregate_id IN (SELECT a.id FROM call_attempts a
-			JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
-			WHERE cr.campaign_id=$1 AND a.state='CANCELLED')`, id)
-	}
-	if err == nil {
-		err = audit(ctx, tx, actor, "campaign.cancel", "campaign", id, nil)
-	}
-	if err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return s.stopCampaignDelivery(ctx, id, actor, false)
 }

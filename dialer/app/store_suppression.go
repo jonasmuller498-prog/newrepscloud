@@ -46,7 +46,47 @@ func (s *Store) SuppressPhone(ctx context.Context, phone, reason, source, actor 
 func (s *Store) suppressTx(
 	ctx context.Context, tx pgx.Tx, hash, ciphertext []byte, reason, source, actor string,
 ) error {
-	_, err := tx.Exec(ctx, `INSERT INTO suppressions
+	rows, err := tx.Query(ctx, `SELECT cr.id FROM campaign_recipients cr
+		JOIN recipients r ON r.id=cr.recipient_id WHERE r.phone_hash=$1
+		FOR UPDATE OF cr`, hash)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	rows, err = tx.Query(ctx, `SELECT a.id FROM call_attempts a
+		JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
+		JOIN recipients r ON r.id=cr.recipient_id WHERE r.phone_hash=$1
+		AND a.state IN ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED',
+		  'TERMINATING','UNCERTAIN') FOR UPDATE OF a`, hash)
+	if err != nil {
+		return err
+	}
+	var attempts []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		attempts = append(attempts, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO suppressions
 		(phone_hash,phone_cipher,reason,source,created_by) VALUES($1,$2,$3,$4,$5)
 		ON CONFLICT(phone_hash) DO NOTHING`, hash, ciphertext, reason, source, actor)
 	if err != nil {
@@ -58,7 +98,7 @@ func (s *Store) suppressTx(
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE call_attempts a SET state='CANCELLED',outcome='suppressed',
+	_, err = tx.Exec(ctx, `UPDATE call_attempts a SET state='SUPPRESSED',outcome='suppressed',
 		ended_at=now(),updated_at=now() FROM campaign_recipients cr JOIN recipients r
 		ON r.id=cr.recipient_id WHERE a.campaign_recipient_id=cr.id AND r.phone_hash=$1
 		AND a.state='CLAIMED'`, hash)
@@ -67,23 +107,31 @@ func (s *Store) suppressTx(
 	}
 	_, err = tx.Exec(ctx, `UPDATE campaign_recipients cr SET status='SUPPRESSED'
 		FROM recipients r WHERE r.id=cr.recipient_id AND r.phone_hash=$1
-		AND cr.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM call_attempts a
-		WHERE a.campaign_recipient_id=cr.id AND a.state IN
-		('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED'))`, hash)
+		AND cr.status='ACTIVE' AND EXISTS(SELECT 1 FROM call_attempts a
+		WHERE a.campaign_recipient_id=cr.id AND a.state='SUPPRESSED')`, hash)
 	if err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE dialer_slots SET attempt_id=NULL,leased_at=NULL
 		WHERE attempt_id IN (SELECT a.id FROM call_attempts a JOIN campaign_recipients cr
 		ON cr.id=a.campaign_recipient_id JOIN recipients r ON r.id=cr.recipient_id
-		WHERE r.phone_hash=$1 AND a.state='CANCELLED')`, hash)
+		WHERE r.phone_hash=$1 AND a.state='SUPPRESSED')`, hash)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE outbox SET state='DONE',processed_at=now()
-		WHERE state='PENDING' AND aggregate_id IN (SELECT a.id FROM call_attempts a
+	_, err = tx.Exec(ctx, `UPDATE outbox SET state='CANCELLED',processed_at=now(),
+		processing_at=NULL WHERE state IN ('PENDING','PROCESSING')
+		AND kind='ARI_ORIGINATE' AND aggregate_id IN (SELECT a.id FROM call_attempts a
 		JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id JOIN recipients r
-		ON r.id=cr.recipient_id WHERE r.phone_hash=$1 AND a.state='CANCELLED')`, hash)
+		ON r.id=cr.recipient_id WHERE r.phone_hash=$1 AND a.state='SUPPRESSED')`, hash)
+	if err != nil {
+		return err
+	}
+	for _, id := range attempts {
+		if err == nil {
+			err = requestTerminationTx(ctx, tx, id, "suppressed")
+		}
+	}
 	return err
 }
 

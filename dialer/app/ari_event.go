@@ -10,6 +10,7 @@ import (
 
 type ARIEvent struct {
 	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
 	Digit     string `json:"digit"`
 	Cause     int    `json:"cause"`
 	CauseText string `json:"cause_txt"`
@@ -42,8 +43,9 @@ func (e ARIEvent) Key(raw []byte) string {
 }
 
 func destroyedOutcome(event ARIEvent, attemptState string) string {
-	if attemptState == "ANSWERED" || attemptState == "MESSAGE_STARTED" {
-		return "completed"
+	if attemptState == "ANSWERED" || attemptState == "MESSAGE_STARTED" ||
+		attemptState == "TERMINATING" || attemptState == "UNCERTAIN" {
+		return "ambiguous"
 	}
 	switch event.Cause {
 	case 17:
@@ -59,6 +61,18 @@ func destroyedOutcome(event ARIEvent, attemptState string) string {
 	default:
 		return "ambiguous"
 	}
+}
+
+func (e ARIEvent) SafeJSON() []byte {
+	value := struct {
+		Type, ChannelID, ChannelState, PlaybackID, Digit string
+		Cause                                            int
+	}{
+		Type: e.Type, ChannelID: e.ChannelID(), ChannelState: e.Channel.State,
+		PlaybackID: e.Playback.ID, Digit: e.Digit, Cause: e.Cause,
+	}
+	data, _ := json.Marshal(value)
+	return data
 }
 
 func eventState(event ARIEvent) string {

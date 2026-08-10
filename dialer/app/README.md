@@ -5,6 +5,12 @@ migrations, elects one scheduler, enforces fixed call slots and database-time CP
 delivers a transactional ARI outbox, consumes ARI events, reconciles state, and
 exports Prometheus text metrics.
 
+Calls originate directly to `PJSIP/<E164>@<ARI_ENDPOINT>` with Stasis `app` and
+`appArgs` only. Once answered in Stasis, ARI plays
+`sound:campaigns/<approved-sha>` with a deterministic playback ID. Completion or
+DTMF `9` queues an ARI hangup, while the fixed slot remains held until terminal
+event or channel-absence reconciliation.
+
 The service does not decide whether a call is legally exempt. Operators must provide
 consent and current DNC evidence for every production campaign. It has no scraping,
 predictive over-dialing, AMD, recording, caller-ID rotation, or script generation.
@@ -24,8 +30,9 @@ message-started, invalid, forbidden, opt-out, and ambiguous outcomes do not retr
 
 | Variable | Default / requirement |
 | --- | --- |
-| `DATABASE_URL` (`DB_URL` alias) | Required PostgreSQL URL |
+| `DATABASE_URL` | Required PostgreSQL URL |
 | `HTTP_ADDR` | `:8080` |
+| `METRICS_ADDR` | `:9090`; must differ from `HTTP_ADDR` |
 | `DIALING_ENABLED` | `false` |
 | `MAX_CONCURRENCY` | `20`; hard maximum `100` |
 | `CPS` | `0`; range `0..100` |
@@ -33,11 +40,12 @@ message-started, invalid, forbidden, opt-out, and ambiguous outcomes do not retr
 | `MEDIA_DIR` | `/var/lib/dialer/media` |
 | `ARI_URL` | ARI server base URL, required when dialing is enabled |
 | `ARI_APP`, `ARI_USER`, `ARI_PASSWORD` | Required when dialing is enabled |
-| `ARI_ENDPOINT_TEMPLATE` | `PJSIP/%s@outbound`; exactly one `%s` |
-| `ARI_CONTEXT`, `ARI_EXTENSION` | `outbound-compliance`, `s` |
-| `OPERATOR_API_TOKEN` (`OPERATOR_TOKEN` alias) | Required |
-| `APPROVER_API_TOKEN` (`APPROVER_TOKEN` alias) | Required and must differ from operator |
-| `HMAC_KEY` | Required, at least 32 raw or base64-decoded bytes |
+| `ARI_ENDPOINT` | Configured PJSIP endpoint name, required when dialing is enabled |
+| `OPERATOR_API_TOKEN` | Required high-entropy token of at least 32 bytes |
+| `APPROVER_API_TOKEN` | Required high-entropy token; must differ from operator |
+| `PHONE_HASH_KEY` | Required high-entropy phone-index key, at least 32 bytes |
+| `FIELD_ENCRYPTION_KEY` | Required high-entropy field-encryption key, at least 32 bytes |
+| `AUDIT_HMAC_KEY` | Required high-entropy audit actor/callback key, at least 32 bytes |
 
 Use a dedicated database role, TLS for PostgreSQL and ARI, a TLS reverse proxy for
 HTTP, and secret injection rather than environment files in an image. Phone numbers
@@ -54,7 +62,7 @@ go build -o dialer .
 
 Migrations are embedded and applied under a PostgreSQL advisory lock at startup.
 The process must have read/write access to `MEDIA_DIR`. The container runs as
-UID/GID `10001`.
+UID/GID `10001`. Media files are written mode `0640` for a shared fsGroup.
 
 ## Workflow
 
@@ -70,19 +78,24 @@ UID/GID `10001`.
 DTMF `9` ARI events immediately opt out the associated recipient. A dialplan may
 instead POST `{"attempt_id":"..."}` or `{"phone_e164":"+..."}` to
 `/api/v1/opt-outs`, authenticated with an operator bearer token or
-`X-Dialer-Signature`, the lowercase hex HMAC-SHA256 of the exact request body.
+`X-Dialer-Signature`, `v1=` plus the lowercase HMAC-SHA256 of
+`callback:v1:` and the exact request body.
+
+Recipient uploads require an `Idempotency-Key`. They return `202 Accepted` with
+an import job; poll the response `Location` until it is `COMPLETED` or `FAILED`.
 
 ## Endpoints
 
-Health is at `/health/live` and `/health/ready`; metrics are at `/metrics`; the UI is
-at `/`. Versioned JSON routes are under `/api/v1`. Operator routes mutate drafts,
+Health is at `/health/live` and `/health/ready` on `HTTP_ADDR`. `/metrics` is served
+only on `METRICS_ADDR` and is absent from the public mux. The operator UI is at `/`
+and the separate approver UI is at `/approver.html`. Versioned JSON routes are under
+`/api/v1`. Operator routes mutate drafts,
 imports, caller IDs, schedules, controls, and suppressions. Only the approver token
 can call campaign approval. Attempts and persisted correlated ARI events support an
 optional `campaign_id` query parameter.
 
 Payloads are limited to 20 MiB globally for CSV/WAV and 16–64 KiB for JSON routes.
-Deploy the metrics and health endpoints behind network policy if their counts are
-sensitive.
+Deploy the metrics listener behind network policy if its counts are sensitive.
 
 ## Integration tests
 

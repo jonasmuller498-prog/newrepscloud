@@ -3,14 +3,17 @@ package main
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
 func takeCPSToken(ctx context.Context, tx pgx.Tx, cps float64) (bool, time.Time, error) {
-	if cps <= 0 {
-		return false, time.Time{}, nil
+	if cps <= 0 || math.IsNaN(cps) || math.IsInf(cps, 0) {
+		var retry time.Time
+		err := tx.QueryRow(ctx, "SELECT clock_timestamp()+interval '1 second'").Scan(&retry)
+		return false, retry, err
 	}
 	var next time.Time
 	err := tx.QueryRow(ctx, `UPDATE cps_limiter SET theoretical_arrival=
@@ -26,7 +29,7 @@ func takeCPSToken(ctx context.Context, tx pgx.Tx, cps float64) (bool, time.Time,
 }
 
 func gcraNext(now, theoretical time.Time, cps float64) (bool, time.Time) {
-	if cps <= 0 {
+	if cps <= 0 || math.IsNaN(cps) || math.IsInf(cps, 0) {
 		return false, theoretical
 	}
 	if theoretical.After(now) {

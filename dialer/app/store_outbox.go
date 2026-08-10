@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"database/sql"
 
 	"github.com/jackc/pgx/v5"
 )
 
 type OutboxItem struct {
-	ID, AttemptID string
+	ID, AttemptID, Kind string
 }
 
 func (s *Store) ClaimOutbox(ctx context.Context) (*OutboxItem, error) {
@@ -19,14 +18,18 @@ func (s *Store) ClaimOutbox(ctx context.Context) (*OutboxItem, error) {
 	}
 	defer tx.Rollback(ctx)
 	var item OutboxItem
-	err = tx.QueryRow(ctx, `SELECT o.id,o.aggregate_id FROM outbox o
+	err = tx.QueryRow(ctx, `SELECT o.id,o.aggregate_id,o.kind FROM outbox o
 		JOIN call_attempts a ON a.id=o.aggregate_id
 		JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
 		JOIN campaigns c ON c.id=cr.campaign_id
-		WHERE o.state='PENDING' AND o.kind='ARI_ORIGINATE'
-		AND a.state='CLAIMED' AND c.state='RUNNING'
-		ORDER BY o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 1`).
-		Scan(&item.ID, &item.AttemptID)
+		WHERE o.state='PENDING' AND o.available_at<=clock_timestamp() AND (
+		  (o.kind='ARI_ORIGINATE' AND a.state='CLAIMED' AND c.state='RUNNING') OR
+		  (o.kind='ARI_PLAY' AND a.state='ANSWERED' AND a.pending_outcome IS NULL) OR
+		  (o.kind='ARI_HANGUP' AND a.state IN ('TERMINATING','UNCERTAIN'))
+		)
+		ORDER BY CASE o.kind WHEN 'ARI_HANGUP' THEN 0 WHEN 'ARI_PLAY' THEN 1 ELSE 2 END,
+		  o.available_at,o.created_at FOR UPDATE OF o SKIP LOCKED LIMIT 1`).
+		Scan(&item.ID, &item.AttemptID, &item.Kind)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -40,46 +43,6 @@ func (s *Store) ClaimOutbox(ctx context.Context) (*OutboxItem, error) {
 	return &item, tx.Commit(ctx)
 }
 
-func (s *Store) LoadOriginateCommand(ctx context.Context, attemptID string) (OriginateCommand, error) {
-	var cmd OriginateCommand
-	var phoneCipher, callerCipher []byte
-	err := s.pool.QueryRow(ctx, `SELECT a.id,a.channel_id,r.phone_cipher,ci.phone_cipher,
-		ma.storage_name FROM call_attempts a
-		JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
-		JOIN campaigns c ON c.id=cr.campaign_id
-		JOIN recipients r ON r.id=cr.recipient_id
-		JOIN consent_evidence ce ON ce.id=cr.consent_evidence_id
-		JOIN caller_ids ci ON ci.id=c.caller_id_id
-		JOIN message_assets ma ON ma.id=c.message_asset_id
-		JOIN campaign_approvals ca ON ca.campaign_id=c.id
-		  AND ca.message_asset_id=ma.id AND ca.caller_id_id=ci.id
-		WHERE a.id=$1 AND a.state='CLAIMED' AND cr.status='ACTIVE' AND c.state='RUNNING'
-		  AND c.dnc_attested_at>=clock_timestamp()-interval '31 days'
-		  AND ce.consent_at<=clock_timestamp()+interval '5 minutes'
-		  AND (clock_timestamp() AT TIME ZONE cr.timezone)::time>=c.window_start
-		  AND (clock_timestamp() AT TIME ZONE cr.timezone)::time<c.window_end
-		  AND NOT EXISTS(SELECT 1 FROM suppressions sp WHERE sp.phone_hash=r.phone_hash)`,
-		attemptID).Scan(&cmd.AttemptID, &cmd.ChannelID, &phoneCipher, &callerCipher, &cmd.Media)
-	if err != nil {
-		return cmd, dbError(err)
-	}
-	cmd.Phone, err = s.protector.Decrypt(phoneCipher)
-	if err == nil {
-		cmd.CallerID, err = s.protector.Decrypt(callerCipher)
-	}
-	if err != nil {
-		return cmd, err
-	}
-	info, err := os.Stat(filepath.Join(s.config.MediaDir, filepath.Base(cmd.Media)))
-	if err != nil || !info.Mode().IsRegular() {
-		if err == nil {
-			err = os.ErrInvalid
-		}
-		return cmd, err
-	}
-	return cmd, nil
-}
-
 func (s *Store) ResetOutbox(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE outbox SET state='PENDING',processing_at=NULL
 		WHERE id=$1 AND state='PROCESSING'`, id)
@@ -88,24 +51,41 @@ func (s *Store) ResetOutbox(ctx context.Context, id string) error {
 
 func (s *Store) CompleteOriginate(
 	ctx context.Context, item OutboxItem, result OriginateResult,
-) error {
+) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(ctx)
+	var state string
+	var pending sql.NullString
+	if err = tx.QueryRow(ctx, `SELECT state,pending_outcome FROM call_attempts WHERE id=$1
+		FOR UPDATE`, item.AttemptID).Scan(&state, &pending); err != nil {
+		return false, dbError(err)
+	}
+	compensate := false
 	if result.Accepted {
-		_, err = tx.Exec(ctx, `UPDATE call_attempts SET state='ORIGINATING',updated_at=now()
-			WHERE id=$1 AND state='CLAIMED'`, item.AttemptID)
+		compensate = state == "TERMINATING"
+		if compensate {
+			err = enqueueARIActionTx(ctx, tx, item.AttemptID, "ARI_HANGUP")
+		}
+	} else if result.Uncertain {
+		_, err = tx.Exec(ctx, `UPDATE call_attempts SET state='UNCERTAIN',
+			outcome='ambiguous',uncertain_at=COALESCE(uncertain_at,now()),updated_at=now()
+			WHERE id=$1 AND state IN ('ORIGINATING','TERMINATING')`, item.AttemptID)
 	} else {
-		err = s.finishAttemptTx(ctx, tx, item.AttemptID, result.Outcome)
+		outcome := result.Outcome
+		if pending.Valid {
+			outcome = pending.String
+		}
+		err = s.finishAttemptTx(ctx, tx, item.AttemptID, outcome)
 	}
 	if err == nil {
 		_, err = tx.Exec(ctx, `UPDATE outbox SET state='DONE',processed_at=now(),processing_at=NULL
 			WHERE id=$1`, item.ID)
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
-	return tx.Commit(ctx)
+	return compensate, tx.Commit(ctx)
 }

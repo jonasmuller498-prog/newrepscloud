@@ -24,7 +24,8 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	protector, err := NewProtector(config.HMACKey)
+	protector, err := NewProtector(
+		config.PhoneHashKey, config.FieldEncryptionKey, config.AuditHMACKey)
 	if err != nil {
 		return err
 	}
@@ -45,32 +46,51 @@ func run(log *slog.Logger) error {
 	metrics := &Metrics{}
 	ari := NewARIClient(config)
 	scheduler := &Scheduler{store, gate, metrics, log}
-	originator := &Originator{store, ari, gate, metrics, log}
+	originator := &Originator{
+		store: store, config: config, client: ari, gate: gate, metrics: metrics, log: log,
+	}
 	consumer := &ARIConsumer{store, ari, gate, metrics, log}
-	reconciler := &Reconciler{store, gate, log}
+	reconciler := &Reconciler{store, ari, gate, log}
+	importer := &ImportWorker{store: store, log: log}
 	go scheduler.Run(root)
 	go originator.Run(root)
 	go consumer.Run(root)
 	go reconciler.Run(root)
-	server := &http.Server{
-		Addr: config.Addr, Handler: NewAPI(store, config, gate, metrics),
+	go importer.Run(root)
+	publicServer := &http.Server{
+		Addr: config.HTTPAddr, Handler: NewAPI(store, config, gate, metrics),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
 		MaxHeaderBytes: 32 << 10,
 	}
-	result := make(chan error, 1)
-	go func() {
-		log.Info("HTTP server started", "address", config.Addr)
-		result <- server.ListenAndServe()
-	}()
+	metricsServer := &http.Server{
+		Addr: config.MetricsAddr, Handler: NewMetricsAPI(store, gate, metrics),
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
+		WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second,
+		MaxHeaderBytes: 16 << 10,
+	}
+	result := make(chan error, 2)
+	startServer := func(name string, server *http.Server) {
+		go func() {
+			log.Info(name+" server started", "address", server.Addr)
+			result <- server.ListenAndServe()
+		}()
+	}
+	startServer("public HTTP", publicServer)
+	startServer("metrics", metricsServer)
 	select {
 	case <-root.Done():
 	case err = <-result:
 		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+			stop()
 		}
 	}
 	shutdown, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
-	return server.Shutdown(shutdown)
+	publicErr := publicServer.Shutdown(shutdown)
+	metricsErr := metricsServer.Shutdown(shutdown)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return errors.Join(publicErr, metricsErr)
 }
