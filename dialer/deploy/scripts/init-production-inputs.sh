@@ -48,7 +48,7 @@ field_encryption_key="$(openssl rand -hex 32)"
 audit_hmac_key="$(openssl rand -hex 32)"
 ari_password="$(openssl rand -hex 32)"
 
-read -r -p "External backup destination/target (empty if unconfigured): " backup_destination
+read -r -p "Non-secret external backup target ID (empty if unconfigured): " backup_destination
 backup_status=unconfigured-suspended
 backup_acknowledged=false
 if [[ -n "$backup_destination" ]]; then
