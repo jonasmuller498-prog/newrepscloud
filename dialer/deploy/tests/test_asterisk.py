@@ -115,7 +115,8 @@ class AsteriskHardeningTests(unittest.TestCase):
     def test_stasis_pool_is_bounded(self):
         body = read("base/asterisk/stasis.conf")
         self.assertIn("[taskpool]", body)
-        self.assertGreater(int(option("base/asterisk/stasis.conf", "minimum_size")), 0)
+        self.assertGreater(int(option("base/asterisk/stasis.conf", "initial_size")), 0)
+        self.assertNotRegex(body, r"(?m)^\s*minimum_size\s*=")
         maximum = int(option("base/asterisk/stasis.conf", "max_size"))
         self.assertGreater(maximum, 0)
         self.assertLessEqual(maximum, 150)
