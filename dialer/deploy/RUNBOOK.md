@@ -131,9 +131,10 @@ kubectl -n voice-dialer logs dialer-engine-0 -c app
 ```
 
 The app owns schema migrations and must use an advisory lock so one failed
-restart cannot partially migrate. PostgreSQL shutdown has 90 seconds; Asterisk
-receives `core stop gracefully`; the app must stop scheduling immediately on
-SIGTERM and drain or mark in-flight calls before exiting.
+restart cannot partially migrate. PostgreSQL and Asterisk run as PID 1 and
+receive their image-defined stop signals directly, with a 90-second grace
+period. The app must stop scheduling immediately on SIGTERM and drain or mark
+in-flight calls before exiting.
 ## 4. Disabled-state checks
 ```bash
 kubectl -n voice-dialer get pods,pvc,svc,ingress,pdb,networkpolicy

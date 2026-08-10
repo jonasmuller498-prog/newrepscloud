@@ -3,8 +3,9 @@ kind: PodDisruptionBudget
 metadata:
   name: dialer-postgres
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   unhealthyPodEvictionPolicy: AlwaysAllow
   selector:
     matchLabels:
       app.kubernetes.io/name: dialer-postgres
+      app.kubernetes.io/component: database

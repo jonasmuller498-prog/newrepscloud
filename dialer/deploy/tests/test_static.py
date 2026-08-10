@@ -103,6 +103,7 @@ class DeploymentTests(unittest.TestCase):
         asterisk = read("base/engine/statefulset-asterisk.yaml")
         self.assertIn("runAsUser: 1000", app)
         self.assertIn("runAsUser: 1000", asterisk)
+        self.assertNotIn("preStop:", asterisk)
         self.assertIn("mountPath: /media", app)
         init = read("base/engine/statefulset-init.yaml")
         self.assertIn("mkdir -p /media/ari-journal", init)
@@ -129,10 +130,25 @@ class DeploymentTests(unittest.TestCase):
         postgres = read("base/postgres/statefulset.yaml")
         self.assertIn("name: dialer-postgres-admin", postgres)
         self.assertIn("name: dialer-postgres-runtime", postgres)
+        self.assertNotIn("preStop:", postgres)
         self.assertIn("postgres/init-runtime.sh", read("base/kustomization.yaml"))
         self.assertIn("suspend: true", read("base/postgres/backup-cronjob.yaml"))
         for pdb in ("base/engine/pdb.yaml", "base/postgres/pdb.yaml"):
-            self.assertIn("maxUnavailable: 1", read(pdb))
+            self.assertIn("minAvailable: 1", read(pdb))
+        service = read("base/postgres/service.yaml")
+        self.assertRegex(
+            service,
+            r"selector:\n\s+app\.kubernetes\.io/name: dialer-postgres\n"
+            r"\s+app\.kubernetes\.io/component: database",
+        )
+        database_network = read("base/network/database.yaml")
+        self.assertGreaterEqual(
+            database_network.count("app.kubernetes.io/component: database"), 2
+        )
+        self.assertIn(
+            "app.kubernetes.io/component: database",
+            read("base/network/engine-egress.yaml"),
+        )
         self.assertFalse((ROOT / "optional/backups/volume-snapshot.yaml").exists())
         self.assertFalse((ROOT / "optional/backups/snapshot-restore-pvc.yaml").exists())
 

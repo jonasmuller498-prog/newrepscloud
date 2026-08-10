@@ -39,10 +39,6 @@ spec:
             periodSeconds: 20
             failureThreshold: 3
             timeoutSeconds: 2
-          lifecycle:
-            preStop:
-              exec:
-                command: [sh, -ec, '/usr/sbin/asterisk -C /config/asterisk.conf -rx "core stop gracefully" || true']
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000

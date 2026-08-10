@@ -75,10 +75,6 @@ spec:
             periodSeconds: 20
             failureThreshold: 5
             timeoutSeconds: 3
-          lifecycle:
-            preStop:
-              exec:
-                command: [sh, -ec, 'pg_ctl -D "$PGDATA" -m fast -w -t 55 stop']
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
