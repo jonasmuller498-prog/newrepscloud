@@ -38,7 +38,9 @@ spec:
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
-                name: dialer-postgres
+                name: dialer-postgres-admin
+            - secretRef:
+                name: dialer-postgres-runtime
           env:
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
@@ -85,6 +87,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
             - name: runtime
               mountPath: /var/run/postgresql
             - name: tmp
@@ -100,6 +105,10 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 256Mi
+        - name: init
+          configMap:
+            name: postgres-init
+            defaultMode: 0555
   volumeClaimTemplates:
     - metadata:
         name: data

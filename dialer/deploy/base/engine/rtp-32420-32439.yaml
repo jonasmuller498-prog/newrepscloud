@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dialer-rtp-32420-32439
+  labels:
+    app.kubernetes.io/name: dialer-engine
+    app.kubernetes.io/component: rtp
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: dialer-engine
+  ports:
+    - {name: rtp-32420, port: 32420, targetPort: 32420, nodePort: 32420, protocol: UDP}
+    - {name: rtp-32421, port: 32421, targetPort: 32421, nodePort: 32421, protocol: UDP}
+    - {name: rtp-32422, port: 32422, targetPort: 32422, nodePort: 32422, protocol: UDP}
+    - {name: rtp-32423, port: 32423, targetPort: 32423, nodePort: 32423, protocol: UDP}
+    - {name: rtp-32424, port: 32424, targetPort: 32424, nodePort: 32424, protocol: UDP}
+    - {name: rtp-32425, port: 32425, targetPort: 32425, nodePort: 32425, protocol: UDP}
+    - {name: rtp-32426, port: 32426, targetPort: 32426, nodePort: 32426, protocol: UDP}
+    - {name: rtp-32427, port: 32427, targetPort: 32427, nodePort: 32427, protocol: UDP}
+    - {name: rtp-32428, port: 32428, targetPort: 32428, nodePort: 32428, protocol: UDP}
+    - {name: rtp-32429, port: 32429, targetPort: 32429, nodePort: 32429, protocol: UDP}
+    - {name: rtp-32430, port: 32430, targetPort: 32430, nodePort: 32430, protocol: UDP}
+    - {name: rtp-32431, port: 32431, targetPort: 32431, nodePort: 32431, protocol: UDP}
+    - {name: rtp-32432, port: 32432, targetPort: 32432, nodePort: 32432, protocol: UDP}
+    - {name: rtp-32433, port: 32433, targetPort: 32433, nodePort: 32433, protocol: UDP}
+    - {name: rtp-32434, port: 32434, targetPort: 32434, nodePort: 32434, protocol: UDP}
+    - {name: rtp-32435, port: 32435, targetPort: 32435, nodePort: 32435, protocol: UDP}
+    - {name: rtp-32436, port: 32436, targetPort: 32436, nodePort: 32436, protocol: UDP}
+    - {name: rtp-32437, port: 32437, targetPort: 32437, nodePort: 32437, protocol: UDP}
+    - {name: rtp-32438, port: 32438, targetPort: 32438, nodePort: 32438, protocol: UDP}
+    - {name: rtp-32439, port: 32439, targetPort: 32439, nodePort: 32439, protocol: UDP}

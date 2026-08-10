@@ -55,7 +55,7 @@ spec:
               mountPath: /config
               readOnly: true
             - name: media
-              mountPath: /media
+              mountPath: /var/lib/asterisk/sounds/campaigns
               readOnly: true
             - name: asterisk-run
               mountPath: /var/run/asterisk
