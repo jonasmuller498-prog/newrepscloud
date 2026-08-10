@@ -113,6 +113,8 @@ HTTP must listen on `127.0.0.1:8088`. Confirm unauthenticated API requests
 return `401`/`403`, role tokens differ, health uses `/health/live` and
 `/health/ready`, metrics answer only through the private `9090` Service, and
 metrics are inaccessible through the Ingress.
+Confirm the app UID can create, fsync, and remove a test file in
+`/media/ari-journal`; do not remove any existing journal records.
 
 Check `DIALING_ENABLED=false`, `CPS=0`, and concurrency `20` through the
 authenticated status endpoint. The app enforces a hard maximum of 100.
@@ -129,6 +131,8 @@ For each attempt the app validates destination and caller ID as US E.164,
 originates `PJSIP/<destination>@outbound` into the ARI application, and plays
 `sound:campaigns/<sha>`. Verify answer, playback completion, DTMF `9`, and
 durable opt-out state using approved controlled numbers before broad dialing.
+The runtime `ARI_ENDPOINT` value itself must be only `outbound`, because the app
+constructs the complete PJSIP endpoint string.
 
 ## 6. Two-stage enablement
 
@@ -152,7 +156,8 @@ Set `DIALING_ENABLED=false` and `CPS=0`, render, and apply. If scheduler behavio
 is suspect, also set `DIALER_TRUNK_ENABLED=false`; this removes the endpoint
 after the pod rolls. Preserve logs and database evidence. Roll back application
 code only to another reviewed 40-character commit and keep schema compatibility
-in mind.
+in mind. Preserve `/media/ari-journal`; pending or malformed records are
+operator-action evidence and must not be discarded to recover readiness.
 
 Both singleton PDBs use `maxUnavailable: 1`, so they do not deadlock voluntary
 maintenance. Maintenance still causes downtime. StatefulSet ordered replacement

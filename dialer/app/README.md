@@ -11,6 +11,12 @@ Calls originate directly to `PJSIP/<E164>@<ARI_ENDPOINT>` with Stasis `app` and
 DTMF `9` queues an ARI hangup, while the fixed slot remains held until terminal
 event or channel-absence reconciliation.
 
+State-changing ARI events are fsynced as redacted records in
+`EVENT_JOURNAL_DIR` before database projection. DTMF `9` is journaled before
+the immediate hangup request. Failed projections stop new originations and
+retry; startup replays the original event key before ARI readiness is restored.
+Malformed records are retained and require operator action.
+
 The service does not decide whether a call is legally exempt. Operators must provide
 consent and current DNC evidence for every production campaign. It has no scraping,
 predictive over-dialing, AMD, recording, caller-ID rotation, or script generation.
@@ -40,7 +46,8 @@ message-started, invalid, forbidden, opt-out, and ambiguous outcomes do not retr
 | `MEDIA_DIR` | `/var/lib/dialer/media` |
 | `ARI_URL` | ARI server base URL, required when dialing is enabled |
 | `ARI_APP`, `ARI_USER`, `ARI_PASSWORD` | Required when dialing is enabled |
-| `ARI_ENDPOINT` | Configured PJSIP endpoint name, required when dialing is enabled |
+| `ARI_ENDPOINT` | Plain PJSIP endpoint name; deployment value is `outbound` |
+| `EVENT_JOURNAL_DIR` | Required writable absolute path when dialing is enabled |
 | `OPERATOR_API_TOKEN` | Required high-entropy token of at least 32 bytes |
 | `APPROVER_API_TOKEN` | Required high-entropy token; must differ from operator |
 | `PHONE_HASH_KEY` | Required high-entropy phone-index key, at least 32 bytes |
@@ -61,8 +68,9 @@ go build -o dialer .
 ```
 
 Migrations are embedded and applied under a PostgreSQL advisory lock at startup.
-The process must have read/write access to `MEDIA_DIR`. The container runs as
-UID/GID `10001`. Media files are written mode `0640` for a shared fsGroup.
+The process must have read/write access to `MEDIA_DIR` and, while dialing,
+`EVENT_JOURNAL_DIR`. The deployment runs as UID/GID `1000`. Media files are
+written mode `0640` for the shared fsGroup.
 
 ## Workflow
 

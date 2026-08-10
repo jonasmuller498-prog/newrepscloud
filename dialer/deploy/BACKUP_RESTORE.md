@@ -53,6 +53,22 @@ exact discovered class. A filesystem snapshot of a running database is only
 crash-consistent. Pause dialing/writes and request a PostgreSQL checkpoint
 first. Never add a guessed default class to this overlay.
 
+## ARI journal consistency
+
+`/media/ari-journal` is on the `dialer-media` Longhorn PVC. It can contain a
+durable, redacted event whose PostgreSQL commit was interrupted or uncertain,
+including an opt-out. Back up the media PVC as well as PostgreSQL, and restore
+both from a coordinated recovery point while dialing and the trunk are
+disabled. Restoring PostgreSQL without the matching journal can lose an
+unprojected opt-out; restoring a newer journal against an older database can
+correctly block readiness when its attempt does not exist.
+
+Never delete or edit a pending or malformed journal record merely to make the
+pod ready. Preserve a copy, determine the matching attempt and database state,
+then follow an approved reconciliation procedure. Replayed records retain the
+original deduplication key, so a commit that succeeded before a crash remains
+idempotent.
+
 Configure a Longhorn recurring backup job for the new PostgreSQL volume through
 the approved cluster process. Do not modify a shared recurring-job resource
 from this deployment. Use unique snapshot names for subsequent captures rather

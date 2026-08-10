@@ -22,7 +22,7 @@ The app's `/metrics` contract must include:
 - `dialer_scheduler_enabled` gauge (`0` paused, `1` enabled);
 - `dialer_slot_mismatch` gauge (`0` when active/reserved/configured reconcile);
 - `dialer_cps_throttled_total` counter;
-- `dialer_sip_attempts_total{result="failed|..."}` counter; and
+- `dialer_sip_attempts_total{result="accepted|failed"}` counter; and
 - `dialer_opt_out_persistence_failures_total` counter.
 
 The rules alert on engine pod down, a long scheduler pause, slot mismatch,
