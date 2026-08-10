@@ -61,9 +61,11 @@ answered or message-started calls are quarantined instead of automatically retri
 | `FIELD_ENCRYPTION_KEY` | Required high-entropy field-encryption key, at least 32 bytes |
 | `AUDIT_HMAC_KEY` | Required high-entropy audit actor/callback key, at least 32 bytes |
 
-Use a dedicated database role, TLS for PostgreSQL and ARI, a TLS reverse proxy for
-HTTP, and secret injection rather than environment files in an image. Phone numbers
-are AES-GCM encrypted at rest and indexed by keyed HMAC. API responses only show the
+The bundled deployment keeps ARI on pod loopback and PostgreSQL behind a
+same-namespace NetworkPolicy with `sslmode=disable`; neither may be exposed.
+External database or ARI endpoints require TLS and a validator/config change.
+Use a TLS reverse proxy for HTTP and secret injection. Phone numbers are
+AES-GCM encrypted at rest and indexed by keyed HMAC. API responses only show the
 last four digits.
 
 ## Run

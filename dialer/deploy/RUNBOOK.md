@@ -172,8 +172,8 @@ The runtime `ARI_DIAL_CONTEXT` must be only `dialer-outbound`.
 
 First add both reviewed URI/auth/profile fields and set `DIALER_TRUNK_ENABLED=true` in
 the ignored `trunk.env`. Render/review/apply and verify separate, qualified
-primary/secondary endpoints, PCMU/PCMA, RFC4733, and plain RTP. Prove secondary
-selection for both primary unreachability and a temporary SIP failure response.
+primary/secondary endpoints, PCMU/PCMA, RFC4733, and the declared `none`/`sdes`
+media profile. Prove secondary selection for primary outage and temporary SIP failure.
 Caller ID is intentionally not hardcoded in PJSIP; the app supplies an
 authorized value per attempt. Scheduler settings remain paused.
 

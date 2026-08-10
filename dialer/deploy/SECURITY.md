@@ -62,6 +62,10 @@ NetworkPolicy boundary. PostgreSQL accepts only engine and labeled maintenance
 pods. The optional Prometheus policy opens only TCP 9090 from its selected
 namespace/pods.
 
+The bundled ARI connection is loopback HTTP and PostgreSQL uses
+`sslmode=disable` inside that restricted namespace. Routing either dependency
+outside these trust boundaries requires TLS plus a validator/config change.
+
 Loopback is a pod-level boundary, not a container security boundary. The app
 sidecar is trusted with write-capable ARI credentials and can control channels,
 playback, and the loaded ARI recording surface. Do not add unreviewed sidecars
