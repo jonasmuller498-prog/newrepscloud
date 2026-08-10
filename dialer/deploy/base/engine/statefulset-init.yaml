@@ -40,6 +40,10 @@ spec:
               value: local
             - name: GOCACHE
               value: /tmp/go-cache
+            - name: GOMODCACHE
+              value: /tmp/go-mod
+            - name: GOPATH
+              value: /tmp/go
             - name: GOTELEMETRY
               value: "off"
             - name: GOMAXPROCS
@@ -85,6 +89,10 @@ spec:
               value: /workspace
             - name: GOCACHE
               value: /tmp/go-cache
+            - name: GOMODCACHE
+              value: /tmp/go-mod
+            - name: GOPATH
+              value: /tmp/go
             - name: GOTELEMETRY
               value: "off"
           envFrom:
