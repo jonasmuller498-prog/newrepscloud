@@ -173,7 +173,12 @@ func enqueueARIActionTx(ctx context.Context, tx pgx.Tx, attemptID, kind string) 
 		VALUES($1,$2,$3,$4) ON CONFLICT(aggregate_id,kind) DO UPDATE SET
 		state=CASE WHEN outbox.state IN ('DONE','CANCELLED')
 		  THEN 'PENDING' ELSE outbox.state END,
-		available_at=now(),processing_at=NULL,processed_at=NULL`,
+		available_at=CASE WHEN outbox.state='PROCESSING'
+		  THEN outbox.available_at ELSE now() END,
+		processing_at=CASE WHEN outbox.state='PROCESSING'
+		  THEN COALESCE(outbox.processing_at,now()) ELSE NULL END,
+		processed_at=CASE WHEN outbox.state='PROCESSING'
+		  THEN outbox.processed_at ELSE NULL END`,
 		attemptUUID(attemptID, sequence), attemptID, kind, payload)
 	return err
 }

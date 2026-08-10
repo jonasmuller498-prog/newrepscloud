@@ -23,7 +23,8 @@ func (s *Store) ReconcileDatabase(ctx context.Context) error {
 	if err == nil {
 		_, err = tx.Exec(ctx, `UPDATE outbox o SET state='PENDING',processing_at=NULL,
 		available_at=now() FROM call_attempts a WHERE o.aggregate_id=a.id
-		AND o.state='PROCESSING' AND o.processing_at<now()-interval '2 minutes'
+			AND o.state='PROCESSING' AND (o.processing_at IS NULL
+			  OR o.processing_at<now()-interval '2 minutes')
 		AND ((o.kind='ARI_ORIGINATE' AND a.state='CLAIMED')
 		  OR (o.kind='ARI_PLAY' AND a.state='ANSWERED')
 		  OR (o.kind='ARI_HANGUP' AND a.state IN ('TERMINATING','UNCERTAIN')))`)
