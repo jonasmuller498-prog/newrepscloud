@@ -39,8 +39,9 @@ variables named in the app contract. Defaults are `DIALING_ENABLED=false`,
 `CPS=0`, and `MAX_CONCURRENCY=20`.
 
 The app originates `PJSIP/%s@outbound` directly into Stasis and plays
-`sound:campaigns/<sha>` through ARI. There is no Local-channel or playback
-dialplan. Uploaded SHA-named WAV files are mode `0640` on the shared media PVC;
+`sound:campaigns/<sha>` through ARI. No intermediary or playback logic remains
+in the dialplan. Uploaded SHA-named WAV files are mode `0640` on the shared
+media PVC;
 the aligned Asterisk process reads them at
 `/var/lib/asterisk/sounds/campaigns`. The only dialplan context rejects calls.
 

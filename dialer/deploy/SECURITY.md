@@ -13,8 +13,7 @@ The app validates each destination and caller ID as `+1` plus ten digits,
 enforces concurrency/CPS, and originates the direct
 `PJSIP/<destination>@outbound` channel through loopback ARI. It then plays
 `sound:campaigns/<sha>` and handles DTMF/lifecycle events through ARI. Asterisk
-has no outbound playback dialplan, Local-channel authorization token, generic
-PSTN context, recording, or AMD.
+has no outbound playback logic, generic PSTN context, recording, or AMD.
 
 The only dialplan context immediately rejects unsolicited calls. The provider
 endpoint uses that defensive context, and no identify or registration section

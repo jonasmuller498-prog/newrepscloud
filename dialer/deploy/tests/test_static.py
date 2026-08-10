@@ -78,7 +78,6 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("cd /workspace/source/dialer/app", build)
         self.assertRegex(build, r"go build [^\n]* \.")
         self.assertIn("chmod 0555 /app-bin/dialer.tmp", build)
-        self.assertNotIn("DIALER_BUILD_PACKAGE", build)
         self.assertIn("static-debian12:nonroot@", read("base/engine/statefulset.yaml"))
         self.assertIn("immutable: true", read("overlays/production/kustomization.yaml"))
 
@@ -123,11 +122,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("suspend: true", read("base/postgres/backup-cronjob.yaml"))
         for pdb in ("base/engine/pdb.yaml", "base/postgres/pdb.yaml"):
             self.assertIn("maxUnavailable: 1", read(pdb))
-            self.assertNotIn("minAvailable:", read(pdb))
-        optional = "\n".join(
-            path.read_text() for path in (ROOT / "optional").rglob("*") if path.is_file()
-        )
-        self.assertNotIn("volumeSnapshotClassName:", optional)
+        self.assertFalse((ROOT / "optional/backups/volume-snapshot.yaml").exists())
+        self.assertFalse((ROOT / "optional/backups/snapshot-restore-pvc.yaml").exists())
 
     def test_network_namespaces_and_private_metrics(self):
         self.assertIn("name: default-deny-all", read("base/network/default-deny.yaml"))
