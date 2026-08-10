@@ -29,3 +29,44 @@ secretGenerator:
     behavior: replace
     envs:
       - inputs/trunk.env
+replacements:
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.INGRESS_NAMESPACE
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-app-ingress
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.TRUNK_SIGNAL_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-voxbone-ingress
+        fieldPaths:
+          - spec.ingress.0.from.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: allow-engine-egress
+        fieldPaths:
+          - spec.egress.3.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.TRUNK_MEDIA_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-voxbone-ingress
+        fieldPaths:
+          - spec.ingress.1.from.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: allow-engine-egress
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
