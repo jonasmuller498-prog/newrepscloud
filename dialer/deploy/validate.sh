@@ -18,17 +18,17 @@ echo "PASS: kubectl kustomize rendered base and optional packages"
 python3 "$root/tests/test_static.py"
 echo "PASS: static deployment policy tests"
 
-bash -n "$root/scripts/build-app.sh"
+bash -n "$root/base/scripts/build-app.sh"
 bash -n "$root/scripts/init-production-inputs.sh"
 if command -v gofmt >/dev/null; then
-  if [[ -n "$(gofmt -d "$root/scripts/render-config.go")" ]]; then
+  if [[ -n "$(gofmt -d "$root/base/scripts/render-config.go")" ]]; then
     echo "render-config.go is not gofmt-clean" >&2
-    gofmt -d "$root/scripts/render-config.go"
+    gofmt -d "$root/base/scripts/render-config.go"
     exit 1
   fi
 fi
 if command -v go >/dev/null; then
-  go test "$root/scripts/render-config.go"
+  go test "$root/base/scripts/render-config.go"
 fi
 echo "PASS: helper scripts parse and renderer compiles"
 

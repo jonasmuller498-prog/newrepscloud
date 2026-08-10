@@ -39,10 +39,10 @@ class DeploymentTests(unittest.TestCase):
             shutil.copytree(ROOT, copy)
             inputs = copy / "overlays/production/inputs"
             values = {
-                "runtime.env": read("config/app.env")
+                "runtime.env": read("base/config/app.env")
                 .replace("REQUIRED_40_CHARACTER_GIT_COMMIT_SHA", "1" * 40)
                 .replace("REQUIRED_64_CHARACTER_SHA256", "2" * 64),
-                "network.env": read("config/network.env.example"),
+                "network.env": read("base/config/network.env.example"),
                 "postgres.env": "POSTGRES_USER=dialer\nPOSTGRES_PASSWORD=" + "3" * 64 + "\nPOSTGRES_DB=dialer\n",
                 "app.env": "DIALER_API_TOKEN=" + "4" * 64 + "\nDIALER_ORIGIN_TOKEN=" + "5" * 64 + "\n",
                 "ari.env": "ARI_USERNAME=dialer_app\nARI_PASSWORD=" + "6" * 64 + "\n",
@@ -61,28 +61,35 @@ class DeploymentTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            backup_result = subprocess.run(
+                ["kubectl", "kustomize", str(copy / "overlays/production-backups")],
+                text=True,
+                capture_output=True,
+            )
+            self.assertEqual(backup_result.returncode, 0, backup_result.stderr)
+            self.assertIn("name: postgres-logical-restore", backup_result.stdout)
 
     def test_nodeports_are_exact_and_nonconflicting(self):
-        manifests = "\n".join(path.read_text() for path in (ROOT / "engine").glob("*.yaml"))
+        manifests = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("*.yaml"))
         ports = [int(value) for value in re.findall(r"nodePort:\s*(\d+)", manifests)]
         expected = {31100, *range(31500, 31700)}
         self.assertEqual(set(ports), expected)
         self.assertEqual(len(ports), len(expected))
         self.assertTrue(expected.isdisjoint({32061, *range(32200, 32220)}))
-        for path in (ROOT / "engine").glob("rtp-*.yaml"):
+        for path in (ROOT / "base/engine").glob("rtp-*.yaml"):
             body = path.read_text()
             self.assertIn("externalTrafficPolicy: Local", body)
             self.assertNotIn("protocol: TCP", body)
 
     def test_safe_defaults_and_secret_examples(self):
-        defaults = read("config/app.env")
+        defaults = read("base/config/app.env")
         for setting in ("DIALING_ENABLED=false", "CPS=0", "MAX_CONCURRENCY=20"):
             self.assertIn(setting, defaults)
         self.assertIn("DIALER_SOURCE_REF=REQUIRED_40_CHARACTER_GIT_COMMIT_SHA", defaults)
-        trunk = read("secrets/trunk.env.example")
+        trunk = read("base/secrets/trunk.env.example")
         self.assertIn("DIALER_TRUNK_ENABLED=false", trunk)
         self.assertIn("disabled.invalid", trunk)
-        for path in (ROOT / "secrets").glob("*.example"):
+        for path in (ROOT / "base/secrets").glob("*.example"):
             self.assertNotRegex(path.read_text(), r"(?i)(password|token)=[A-Fa-f0-9]{20,}")
 
     def test_asterisk_is_outbound_only_and_loopback_ari(self):
@@ -90,12 +97,12 @@ class DeploymentTests(unittest.TestCase):
             "pjsip.conf", "extensions.conf", "http.conf", "ari.conf",
             "rtp.conf", "logger.conf", "modules.conf",
         }
-        self.assertTrue(required.issubset({p.name for p in (ROOT / "asterisk").glob("*.conf")}))
-        self.assertIn("bindaddr=127.0.0.1", read("asterisk/http.conf"))
-        pjsip = read("asterisk/pjsip.conf")
+        self.assertTrue(required.issubset({p.name for p in (ROOT / "base/asterisk").glob("*.conf")}))
+        self.assertIn("bindaddr=127.0.0.1", read("base/asterisk/http.conf"))
+        pjsip = read("base/asterisk/pjsip.conf")
         self.assertIn("external_signaling_address=5.196.90.231", pjsip)
         self.assertIn("bind=0.0.0.0:31100", pjsip)
-        dialplan = read("asterisk/extensions.conf")
+        dialplan = read("base/asterisk/extensions.conf")
         for marker in (
             r'REGEX("^\+1[0-9]{10}$"', "HARD_EXTERNAL_LIMIT=100",
             "STAT(e,${CAMPAIGN_FILE}.wav)", "DialerAnswer", "DialerOptOut",
@@ -103,25 +110,25 @@ class DeploymentTests(unittest.TestCase):
         ):
             self.assertIn(marker, dialplan)
         self.assertNotRegex(dialplan.lower(), r"\b(mixmonitor|monitor|amd|record)\s*\(")
-        services = "\n".join(path.read_text() for path in (ROOT / "engine").glob("service-*.yaml"))
+        services = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("service-*.yaml"))
         self.assertNotIn("8088", services)
 
     def test_storage_security_and_paused_restore(self):
-        engine = read("engine/statefulset.yaml") + read("engine/statefulset-app.yaml")
+        engine = read("base/engine/statefulset.yaml") + read("base/engine/statefulset-app.yaml")
         self.assertIn("kubernetes.io/hostname: runners", engine)
         self.assertIn("claimName: dialer-media", engine)
-        self.assertIn("mountPath: /media\n              readOnly: true", read("engine/statefulset-asterisk.yaml"))
-        self.assertIn("storageClassName: longhorn", read("postgres/statefulset.yaml"))
-        self.assertIn("suspend: true", read("postgres/backup-cronjob.yaml"))
+        self.assertIn("mountPath: /media\n              readOnly: true", read("base/engine/statefulset-asterisk.yaml"))
+        self.assertIn("storageClassName: longhorn", read("base/postgres/statefulset.yaml"))
+        self.assertIn("suspend: true", read("base/postgres/backup-cronjob.yaml"))
         restore = read("optional/backups/logical-restore-job.yaml")
         self.assertIn("suspend: true", restore)
         self.assertIn("I_UNDERSTAND_DATA_WILL_BE_REPLACED", restore)
 
     def test_network_and_monitoring_guards(self):
-        self.assertIn("name: default-deny-all", read("network/default-deny.yaml"))
-        self.assertIn("0.0.0.0/0", read("network/engine-egress.yaml"))
-        self.assertIn("except:", read("network/engine-egress.yaml"))
-        ingress = read("ingress.yaml")
+        self.assertIn("name: default-deny-all", read("base/network/default-deny.yaml"))
+        self.assertIn("0.0.0.0/0", read("base/network/engine-egress.yaml"))
+        self.assertIn("except:", read("base/network/engine-egress.yaml"))
+        ingress = read("base/ingress.yaml")
         self.assertIn("dialer.playground.obvious.tech", ingress)
         self.assertIn("letsencrypt-prod", ingress)
         rules = read("optional/monitoring/prometheusrule.yaml")
