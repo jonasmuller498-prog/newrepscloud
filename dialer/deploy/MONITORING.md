@@ -11,9 +11,11 @@ kubectl diff -k optional/monitoring
 kubectl apply -k optional/monitoring
 ```
 
-The supplied NetworkPolicy expects namespace `monitoring` and Prometheus pods
-with `app.kubernetes.io/name=prometheus`. Patch those selectors to the actual
-installation before apply. Do not add metrics to the Ingress or a NodePort.
+The supplied NetworkPolicy expects Rancher Monitoring in
+`cattle-monitoring-system` and Prometheus pods with
+`app.kubernetes.io/name=prometheus`. Verify those selectors before apply.
+Metrics listen only on the app's `9090` listener; never add that Service to the
+Ingress or a NodePort.
 
 The app's `/metrics` contract must include:
 

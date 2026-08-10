@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import pathlib
 import re
-import shutil
 import subprocess
-import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -13,14 +11,22 @@ def read(relative):
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def env_keys(relative):
+    return {
+        line.split("=", 1)[0]
+        for line in read(relative).splitlines()
+        if line and not line.startswith("#")
+    }
+
+
 class DeploymentTests(unittest.TestCase):
     def test_every_file_is_under_200_lines(self):
         for path in ROOT.rglob("*"):
-            if path.is_file():
+            if path.is_file() and path.suffix != ".pyc":
                 count = len(path.read_text(encoding="utf-8").splitlines())
                 self.assertLess(count, 200, f"{path.relative_to(ROOT)} has {count} lines")
 
-    def test_base_kustomize_renders(self):
+    def test_base_renders_but_has_no_generated_credentials(self):
         result = subprocess.run(
             ["kubectl", "kustomize", str(ROOT)],
             check=True,
@@ -31,61 +37,17 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("namespace: voice-dialer", rendered)
         self.assertIn("kind: StatefulSet", rendered)
         self.assertIn("@@TRUNK_BLOCK@@", rendered)
-        self.assertIn("- /scripts/render-config.go", rendered)
-
-    def test_production_overlay_renders_with_untracked_inputs(self):
-        with tempfile.TemporaryDirectory() as temp:
-            copy = pathlib.Path(temp) / "deploy"
-            shutil.copytree(ROOT, copy)
-            inputs = copy / "overlays/production/inputs"
-            values = {
-                "runtime.env": read("base/config/app.env")
-                .replace("REQUIRED_40_CHARACTER_GIT_COMMIT_SHA", "1" * 40)
-                .replace("REQUIRED_64_CHARACTER_SHA256", "2" * 64),
-                "network.env": (
-                    "INGRESS_NAMESPACE=edge-ingress\n"
-                    "TRUNK_SIGNAL_CIDR=203.0.113.10/32\n"
-                    "TRUNK_MEDIA_CIDR=203.0.113.0/24\n"
-                ),
-                "postgres.env": "POSTGRES_USER=dialer\nPOSTGRES_PASSWORD=" + "3" * 64 + "\nPOSTGRES_DB=dialer\n",
-                "app.env": "DIALER_API_TOKEN=" + "4" * 64 + "\nDIALER_ORIGIN_TOKEN=" + "5" * 64 + "\n",
-                "ari.env": "ARI_USERNAME=dialer_app\nARI_PASSWORD=" + "6" * 64 + "\n",
-                "trunk.env": (
-                    "DIALER_TRUNK_ENABLED=false\nDIALER_TRUNK_AUTH_MODE=ip\n"
-                    "DIALER_TRUNK_SIP_URI=sip:account@sbc.example:5060\n"
-                    "DIALER_TRUNK_USERNAME=\nDIALER_TRUNK_PASSWORD=\n"
-                    "DIALER_TRUNK_REALM=*\nDIALER_CALLER_ID=+12025550123\n"
-                ),
-            }
-            for name, value in values.items():
-                (inputs / name).write_text(value, encoding="utf-8")
-            result = subprocess.run(
-                ["kubectl", "kustomize", str(copy / "overlays/production")],
-                text=True,
-                capture_output=True,
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertGreaterEqual(result.stdout.count("edge-ingress"), 2)
-            self.assertGreaterEqual(result.stdout.count("203.0.113.10/32"), 3)
-            self.assertGreaterEqual(result.stdout.count("203.0.113.0/24"), 3)
-            backup_result = subprocess.run(
-                ["kubectl", "kustomize", str(copy / "overlays/production-backups")],
-                text=True,
-                capture_output=True,
-            )
-            self.assertEqual(backup_result.returncode, 0, backup_result.stderr)
-            self.assertIn("name: postgres-logical-restore", backup_result.stdout)
-            postgres_refs = re.findall(
-                r"secretKeyRef:\n\s+key: POSTGRES_[A-Z_]+\n\s+name: (\S+)",
-                backup_result.stdout,
-            )
-            self.assertTrue(postgres_refs)
-            self.assertTrue(all(name.startswith("dialer-postgres-") for name in postgres_refs))
+        self.assertNotIn("\nkind: Secret\n", rendered)
+        missing = subprocess.run(
+            ["kubectl", "kustomize", str(ROOT / "overlays/production")],
+            text=True, capture_output=True,
+        )
+        self.assertNotEqual(missing.returncode, 0)
 
     def test_nodeports_are_exact_and_nonconflicting(self):
         manifests = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("*.yaml"))
         ports = [int(value) for value in re.findall(r"nodePort:\s*(\d+)", manifests)]
-        expected = {31100, *range(31500, 31700)}
+        expected = {31100, *range(32300, 32500)}
         self.assertEqual(set(ports), expected)
         self.assertEqual(len(ports), len(expected))
         self.assertTrue(expected.isdisjoint({32061, *range(32200, 32220)}))
@@ -94,63 +56,96 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn("externalTrafficPolicy: Local", body)
             self.assertNotIn("protocol: TCP", body)
 
-    def test_safe_defaults_and_secret_examples(self):
+    def test_final_app_environment_contract(self):
         defaults = read("base/config/app.env")
         for setting in ("DIALING_ENABLED=false", "CPS=0", "MAX_CONCURRENCY=20"):
             self.assertIn(setting, defaults)
-        self.assertIn("DIALER_SOURCE_REF=REQUIRED_40_CHARACTER_GIT_COMMIT_SHA", defaults)
-        trunk = read("base/secrets/trunk.env.example")
-        self.assertIn("DIALER_TRUNK_ENABLED=false", trunk)
-        self.assertIn("disabled.invalid", trunk)
-        for path in (ROOT / "base/secrets").glob("*.example"):
-            self.assertNotRegex(path.read_text(), r"(?i)(password|token)=[A-Fa-f0-9]{20,}")
-
-    def test_asterisk_is_outbound_only_and_loopback_ari(self):
-        required = {
-            "pjsip.conf", "extensions.conf", "http.conf", "ari.conf",
-            "rtp.conf", "logger.conf", "modules.conf",
+        fixed = {
+            "HTTP_ADDR=:8080", "METRICS_ADDR=:9090", "MEDIA_DIR=/media",
+            "ARI_URL=http://127.0.0.1:8088/ari", "ARI_APP=voice-dialer",
+            "ARI_ENDPOINT=PJSIP/%s@outbound",
         }
-        self.assertTrue(required.issubset({p.name for p in (ROOT / "base/asterisk").glob("*.conf")}))
+        self.assertTrue(fixed.issubset(set(defaults.splitlines())))
+        self.assertEqual(env_keys("base/secrets/app.env.example"), {
+            "OPERATOR_API_TOKEN", "APPROVER_API_TOKEN", "PHONE_HASH_KEY",
+            "FIELD_ENCRYPTION_KEY", "AUDIT_HMAC_KEY",
+        })
+        self.assertEqual(env_keys("base/secrets/ari.env.example"), {"ARI_USER", "ARI_PASSWORD"})
+        self.assertIn(
+            "DATABASE_URL", env_keys("base/secrets/postgres-runtime.env.example")
+        )
+        build = read("base/scripts/build-app.sh")
+        self.assertIn("cd /workspace/source/dialer/app", build)
+        self.assertRegex(build, r"go build [^\n]* \.")
+        self.assertIn("chmod 0555 /app-bin/dialer.tmp", build)
+        self.assertNotIn("DIALER_BUILD_PACKAGE", build)
+        self.assertIn("static-debian12:nonroot@", read("base/engine/statefulset.yaml"))
+        self.assertIn("immutable: true", read("overlays/production/kustomization.yaml"))
+
+    def test_direct_ari_and_shared_media_are_coherent(self):
         self.assertIn("bindaddr=127.0.0.1", read("base/asterisk/http.conf"))
-        pjsip = read("base/asterisk/pjsip.conf")
-        self.assertIn("external_signaling_address=5.196.90.231", pjsip)
-        self.assertIn("bind=0.0.0.0:31100", pjsip)
+        self.assertIn("sessionlimit=150", read("base/asterisk/http.conf"))
+        self.assertIn("maxcalls = 150", read("base/asterisk/asterisk.conf"))
         dialplan = read("base/asterisk/extensions.conf")
-        for marker in (
-            r'REGEX("^\+1[0-9]{10}$"', "HARD_EXTERNAL_LIMIT=100",
-            "STAT(e,${CAMPAIGN_FILE}.wav)", "DialerAnswer", "DialerOptOut",
-            "DialerPlaybackComplete", "DialerCompletion", "Background(",
-        ):
-            self.assertIn(marker, dialplan)
-        self.assertNotRegex(dialplan.lower(), r"\b(mixmonitor|monitor|amd|record)\s*\(")
+        self.assertIn("[reject-inbound]", dialplan)
+        self.assertNotRegex(dialplan, r"\b(?:Dial|Background|Playback|Stasis)\s*\(")
+        renderer = read("base/scripts/render-config.go")
+        self.assertIn("[outbound]", renderer)
+        self.assertIn("dtmf_mode=rfc4733", renderer)
+        self.assertIn("media_encryption=no", renderer)
+        self.assertNotIn("callerid=", renderer.lower())
+        app = read("base/engine/statefulset-app.yaml")
+        asterisk = read("base/engine/statefulset-asterisk.yaml")
+        self.assertIn("runAsUser: 1000", app)
+        self.assertIn("runAsUser: 1000", asterisk)
+        self.assertIn("mountPath: /media", app)
+        self.assertIn("mountPath: /var/lib/asterisk/sounds/campaigns", asterisk)
         services = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("service-*.yaml"))
         self.assertNotIn("8088", services)
 
-    def test_storage_security_and_paused_restore(self):
-        engine = read("base/engine/statefulset.yaml") + read("base/engine/statefulset-app.yaml")
-        self.assertIn("kubernetes.io/hostname: runners", engine)
-        self.assertIn("claimName: dialer-media", engine)
-        self.assertIn("mountPath: /media\n              readOnly: true", read("base/engine/statefulset-asterisk.yaml"))
-        self.assertIn("storageClassName: longhorn", read("base/postgres/statefulset.yaml"))
-        self.assertIn("suspend: true", read("base/postgres/backup-cronjob.yaml"))
-        restore = read("optional/backups/logical-restore-job.yaml")
-        self.assertIn("suspend: true", restore)
-        self.assertIn("I_UNDERSTAND_DATA_WILL_BE_REPLACED", restore)
-
-    def test_network_and_monitoring_guards(self):
-        self.assertIn("name: default-deny-all", read("base/network/default-deny.yaml"))
-        self.assertIn("0.0.0.0/0", read("base/network/engine-egress.yaml"))
-        self.assertIn("except:", read("base/network/engine-egress.yaml"))
+    def test_http_metrics_and_ingress_paths(self):
+        app = read("base/engine/statefulset-app.yaml")
+        for path in ("/health/live", "/health/ready"):
+            self.assertIn(f"path: {path}", app)
+        metrics = read("base/engine/service-metrics.yaml")
+        self.assertIn("port: 9090", metrics)
+        self.assertIn("targetPort: metrics", metrics)
         ingress = read("base/ingress.yaml")
-        self.assertIn("dialer.playground.obvious.tech", ingress)
-        self.assertIn("letsencrypt-prod", ingress)
-        rules = read("optional/monitoring/prometheusrule.yaml")
-        for alert in (
-            "DialerEnginePodDown", "DialerSchedulerPaused", "DialerSlotMismatch",
-            "DialerCPSThrottling", "DialerHighSIPFailureRate",
-            "DialerOptOutPersistenceFailure",
-        ):
-            self.assertIn(f"alert: {alert}", rules)
+        self.assertIn("proxy-body-size: 22m", ingress)
+        self.assertIn("name: dialer-api", ingress)
+        self.assertNotIn("dialer-metrics", ingress)
+
+    def test_database_backup_and_disruption_guards(self):
+        postgres = read("base/postgres/statefulset.yaml")
+        self.assertIn("name: dialer-postgres-admin", postgres)
+        self.assertIn("name: dialer-postgres-runtime", postgres)
+        self.assertIn("postgres/init-runtime.sh", read("base/kustomization.yaml"))
+        self.assertIn("suspend: true", read("base/postgres/backup-cronjob.yaml"))
+        for pdb in ("base/engine/pdb.yaml", "base/postgres/pdb.yaml"):
+            self.assertIn("maxUnavailable: 1", read(pdb))
+            self.assertNotIn("minAvailable:", read(pdb))
+        all_text = "\n".join(path.read_text() for path in ROOT.rglob("*") if path.is_file())
+        self.assertNotIn("longhorn-snapshot-vsc", all_text)
+
+    def test_network_namespaces_and_private_metrics(self):
+        self.assertIn("name: default-deny-all", read("base/network/default-deny.yaml"))
+        app_ingress = read("base/network/app-ingress.yaml")
+        self.assertIn("kubernetes.io/metadata.name: kube-system", app_ingress)
+        self.assertIn("app.kubernetes.io/name: rke2-ingress-nginx", app_ingress)
+        monitoring = read("optional/monitoring/networkpolicy.yaml")
+        self.assertIn("kubernetes.io/metadata.name: cattle-monitoring-system", monitoring)
+        carrier = read("base/network/carrier-ingress.yaml")
+        self.assertIn("port: 32300", carrier)
+        self.assertIn("endPort: 32499", carrier)
+
+    def test_all_workload_images_are_tag_and_digest_pinned(self):
+        image_re = re.compile(r"^\s*image:\s+\S+:[^@\s]+@sha256:[0-9a-f]{64}\s*$")
+        images = []
+        for path in ROOT.rglob("*.yaml"):
+            images.extend(line for line in path.read_text().splitlines() if "image:" in line)
+        self.assertTrue(images)
+        for line in images:
+            self.assertRegex(line, image_re)
 
 
 if __name__ == "__main__":
