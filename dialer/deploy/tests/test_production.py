@@ -114,6 +114,8 @@ class ProductionOverlayTests(unittest.TestCase):
             (inputs / "trunk.env").write_text(
                 "DIALER_TRUNK_ENABLED=true\n"
                 "DIALER_TRUNK_AUTH_MODE=ip\n"
+                "DIALER_TRUNK_TRANSPORT=udp\n"
+                "DIALER_TRUNK_MEDIA_ENCRYPTION=sdes\n"
                 "DIALER_TRUNK_SIP_URI_PRIMARY=sip:account@192.0.2.10:5060\n"
                 "DIALER_TRUNK_SIP_URI_SECONDARY=sip:account@192.0.2.11:5060\n"
             )
@@ -192,7 +194,6 @@ class ProductionOverlayTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("32300 nodePort", result.stderr)
             self.assertIn("31100 healthCheckNodePort", result.stderr)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

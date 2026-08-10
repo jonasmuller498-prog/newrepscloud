@@ -22,8 +22,10 @@ registration section accepts inbound campaign traffic.
 ## Asterisk and provider
 
 - ARI HTTP binds only `127.0.0.1:8088`; no Service or Ingress targets it.
-- SIP exposes UDP only. RTP is plain by default, with PCMU (`ulaw`) and PCMA
-  (`alaw`) plus RFC4733 DTMF. The app supplies a reviewed caller ID per call.
+- `DIALER_TRUNK_TRANSPORT=udp` is mandatory. Media must explicitly select
+  `none` or `sdes`; PCMU/PCMA and RFC4733 remain fixed. TLS is not implemented.
+  Do not enable a TLS/SRTP account, and use UDP/SDES only when the provider's
+  assigned profile explicitly requires it. The app supplies reviewed caller ID.
 - `digest` mode emits outbound auth. `ip` mode emits no auth object. Neither
   mode enables inbound campaign routes or provider registration.
 - Both exact assigned URIs must be `sip:[account@]IPv4:port`; the renderer
@@ -31,6 +33,9 @@ registration section accepts inbound campaign traffic.
 - Set each signaling `/32` to the IPv4 in its paired URI and set the media CIDR
   to the account-specific provider range. Do not infer SBCs from a brand-level
   hostname.
+- The two `/32`s model the assigned outbound termination pair, not the separate
+  inbound-origination source list. More signaling peers or media ranges require
+  a manifest/model change before enablement; never widen a CIDR as a shortcut.
 - Asterisk qualifies both SBCs every 30 seconds. The internal dialplan retries
   the secondary sequentially only for `CONGESTION` or `CHANUNAVAIL`; it never
   forks duplicate calls. Verify outage and temporary-response paths in pilot.

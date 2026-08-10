@@ -100,7 +100,7 @@ class DeploymentTests(unittest.TestCase):
         renderer = read("base/scripts/render-config.go")
         self.assertIn("[outbound-primary](outbound-template)", renderer)
         self.assertIn("dtmf_mode=rfc4733", renderer)
-        self.assertIn("media_encryption=no", renderer)
+        self.assertIn("DIALER_TRUNK_MEDIA_ENCRYPTION", renderer)
         self.assertNotIn("callerid=", renderer.lower())
         app = read("base/engine/statefulset-app.yaml")
         asterisk = read("base/engine/statefulset-asterisk.yaml")

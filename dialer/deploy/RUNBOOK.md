@@ -56,7 +56,7 @@ carrier CIDRs, trunk fields, PJSIP transports, or public SIP/RTP Services; use
 the production overlay later and complete all production gates.
 ## 1. Resolve inputs and RKE2 preflight
 Do not start production rendering until owners provide all of:
-- both assigned outbound SBC IPv4 URIs/ports and explicit digest or IP authentication;
+- both SBC IPv4 URIs, auth mode, and confirmed UDP plus `none`/`sdes` media profile;
 - matching signaling `/32`s for both URIs and the exact carrier media range;
 - approved CPS;
 - authorized US E.164 caller IDs and STIR/SHAKEN treatment;
@@ -170,7 +170,7 @@ The runtime `ARI_DIAL_CONTEXT` must be only `dialer-outbound`.
 
 ## 6. Two-stage enablement
 
-First add both reviewed URI/auth fields and set `DIALER_TRUNK_ENABLED=true` in
+First add both reviewed URI/auth/profile fields and set `DIALER_TRUNK_ENABLED=true` in
 the ignored `trunk.env`. Render/review/apply and verify separate, qualified
 primary/secondary endpoints, PCMU/PCMA, RFC4733, and plain RTP. Prove secondary
 selection for both primary unreachability and a temporary SIP failure response.

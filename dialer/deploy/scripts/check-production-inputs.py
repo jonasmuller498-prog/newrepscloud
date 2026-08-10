@@ -26,6 +26,7 @@ FILES = {
 }
 TRUNK_KEYS = {
     "DIALER_TRUNK_ENABLED", "DIALER_TRUNK_AUTH_MODE",
+    "DIALER_TRUNK_TRANSPORT", "DIALER_TRUNK_MEDIA_ENCRYPTION",
     "DIALER_TRUNK_SIP_URI_PRIMARY", "DIALER_TRUNK_SIP_URI_SECONDARY",
     "DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM",
 }
@@ -64,12 +65,17 @@ def check_trunk(values, signals):
         fail("trunk.env contains unsupported keys")
     if values["DIALER_TRUNK_ENABLED"] == "false":
         return
-    for key in ("DIALER_TRUNK_AUTH_MODE", "DIALER_TRUNK_SIP_URI_PRIMARY",
+    for key in ("DIALER_TRUNK_AUTH_MODE", "DIALER_TRUNK_TRANSPORT",
+                "DIALER_TRUNK_MEDIA_ENCRYPTION", "DIALER_TRUNK_SIP_URI_PRIMARY",
                 "DIALER_TRUNK_SIP_URI_SECONDARY"):
         if not values.get(key):
             fail(f"{key} is required when the trunk is enabled")
     if values["DIALER_TRUNK_AUTH_MODE"] not in {"digest", "ip"}:
         fail("trunk auth mode must be digest or ip")
+    if values["DIALER_TRUNK_TRANSPORT"] != "udp":
+        fail("this deployment supports only its reviewed UDP carrier transport")
+    if values["DIALER_TRUNK_MEDIA_ENCRYPTION"] not in {"none", "sdes"}:
+        fail("trunk media encryption must be none or sdes")
     uris = (values["DIALER_TRUNK_SIP_URI_PRIMARY"], values["DIALER_TRUNK_SIP_URI_SECONDARY"])
     if uris[0] == uris[1]:
         fail("outbound SBC URIs must be distinct")
@@ -80,7 +86,8 @@ def check_trunk(values, signals):
         for key in ("DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM"):
             if not values.get(key):
                 fail(f"{key} is required for digest auth")
-    elif values.keys() & {"DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD"}:
+    elif values.keys() & {"DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD",
+                          "DIALER_TRUNK_REALM"}:
         fail("IP auth must not include digest credentials")
 
 

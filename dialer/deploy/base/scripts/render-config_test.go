@@ -5,7 +5,13 @@ import (
 	"testing"
 )
 
+func setTrunkProfile(t *testing.T) {
+	t.Setenv("DIALER_TRUNK_TRANSPORT", "udp")
+	t.Setenv("DIALER_TRUNK_MEDIA_ENCRYPTION", "sdes")
+}
+
 func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
+	setTrunkProfile(t)
 	t.Setenv("DIALER_TRUNK_AUTH_MODE", "ip")
 	t.Setenv("DIALER_TRUNK_SIP_URI_PRIMARY", "sip:account@192.0.2.10:5060")
 	t.Setenv("DIALER_TRUNK_SIP_URI_SECONDARY", "sip:account@192.0.2.11:5060")
@@ -22,6 +28,7 @@ func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
 		"aors=outbound-primary-aor",
 		"[outbound-secondary](outbound-template)",
 		"aors=outbound-secondary-aor",
+		"media_encryption=sdes",
 	}
 	for _, value := range required {
 		if !strings.Contains(body, value) {
@@ -41,6 +48,7 @@ func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
 }
 
 func TestTrunkBlockRejectsDuplicateSBCs(t *testing.T) {
+	setTrunkProfile(t)
 	t.Setenv("DIALER_TRUNK_AUTH_MODE", "ip")
 	t.Setenv("DIALER_TRUNK_SIP_URI_PRIMARY", "sip:sbc.example.net:5060")
 	t.Setenv("DIALER_TRUNK_SIP_URI_SECONDARY", "sip:sbc.example.net:5060")
@@ -54,6 +62,7 @@ func TestTrunkBlockRejectsDuplicateSBCs(t *testing.T) {
 }
 
 func TestTrunkBlockRejectsMismatchedSBCNetwork(t *testing.T) {
+	setTrunkProfile(t)
 	t.Setenv("DIALER_TRUNK_AUTH_MODE", "ip")
 	t.Setenv("DIALER_TRUNK_SIP_URI_PRIMARY", "sip:192.0.2.10:5060")
 	t.Setenv("DIALER_TRUNK_SIP_URI_SECONDARY", "sip:192.0.2.12:5060")
@@ -63,6 +72,19 @@ func TestTrunkBlockRejectsMismatchedSBCNetwork(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("SBC URI outside its paired signaling /32 was accepted")
+		}
+	}()
+	trunkBlock(true)
+}
+
+func TestTrunkBlockRejectsUnsupportedTransport(t *testing.T) {
+	t.Setenv("DIALER_TRUNK_AUTH_MODE", "ip")
+	t.Setenv("DIALER_TRUNK_TRANSPORT", "tls")
+	t.Setenv("DIALER_TRUNK_MEDIA_ENCRYPTION", "sdes")
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("unsupported TLS transport was accepted")
 		}
 	}()
 	trunkBlock(true)

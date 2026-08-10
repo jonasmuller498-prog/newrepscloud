@@ -70,6 +70,15 @@ func trunkBlock(enabled bool) string {
 	if mode != "digest" && mode != "ip" {
 		panic("DIALER_TRUNK_AUTH_MODE must be exactly digest or ip")
 	}
+	if required("DIALER_TRUNK_TRANSPORT") != "udp" {
+		panic("DIALER_TRUNK_TRANSPORT must be udp for this reviewed deployment")
+	}
+	mediaEncryption := required("DIALER_TRUNK_MEDIA_ENCRYPTION")
+	if mediaEncryption == "none" {
+		mediaEncryption = "no"
+	} else if mediaEncryption != "sdes" {
+		panic("DIALER_TRUNK_MEDIA_ENCRYPTION must be exactly none or sdes")
+	}
 	uris := []string{
 		required("DIALER_TRUNK_SIP_URI_PRIMARY"),
 		required("DIALER_TRUNK_SIP_URI_SECONDARY"),
@@ -126,7 +135,7 @@ direct_media=no
 force_rport=yes
 rewrite_contact=yes
 rtp_symmetric=yes
-media_encryption=no
+media_encryption=%s
 send_pai=yes
 send_rpid=no
 trust_id_outbound=yes
@@ -137,7 +146,7 @@ aors=outbound-primary-aor
 
 [outbound-secondary](outbound-template)
 aors=outbound-secondary-aor
-%s`, configValue(uris[0]), configValue(uris[1]), authLine, authSection)
+%s`, configValue(uris[0]), configValue(uris[1]), authLine, mediaEncryption, authSection)
 }
 
 func main() {

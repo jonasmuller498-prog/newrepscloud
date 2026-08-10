@@ -14,6 +14,7 @@ REQUIRED_MODULES = (
     "res_sorcery_astdb.so",
     "res_pjproject.so",
     "res_rtp_asterisk.so",
+    "res_srtp.so",
     "codec_ulaw.so",
     "codec_alaw.so",
     "format_wav.so",

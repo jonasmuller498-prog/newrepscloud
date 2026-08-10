@@ -114,10 +114,10 @@ directory ignores all `*.env` files. Do not use `--from-literal` with secrets
 on a shared shell because command arguments can be observable.
 
 The helper deliberately creates only `DIALER_TRUNK_ENABLED=false`; it never
-guesses the carrier's redundant SBC pair, account, auth mode, or caller ID. Add
-both assigned SBC IPv4 targets only after provider review; each URI must match
-its corresponding signaling `/32`. Caller ID is supplied per attempt and must
-be an app-authorized US E.164 identity.
+guesses the SBC pair, account, auth, transport, media profile, or caller ID. Add
+assigned SBC IPv4 targets only after provider review; each URI must match its
+signaling `/32`, transport must be `udp`, and media must declare `none` or
+`sdes`. Caller ID is supplied per attempt and must be an authorized US identity.
 Production renders separate, qualified primary and secondary endpoints. The
 dialplan advances after an unavailable route or temporary SIP congestion while
 busy and no-answer remain terminal for that attempt. Commissioning must prove
