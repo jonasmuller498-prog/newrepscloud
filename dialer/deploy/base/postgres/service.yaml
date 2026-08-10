@@ -10,6 +10,7 @@ spec:
   publishNotReadyAddresses: false
   selector:
     app.kubernetes.io/name: dialer-postgres
+    app.kubernetes.io/component: database
   ports:
     - name: postgres
       port: 5432

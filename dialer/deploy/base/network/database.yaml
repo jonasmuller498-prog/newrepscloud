@@ -6,6 +6,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: dialer-postgres
+      app.kubernetes.io/component: database
   policyTypes:
     - Ingress
   ingress:
@@ -44,5 +45,6 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: dialer-postgres
+              app.kubernetes.io/component: database
       ports:
         - {port: 5432, protocol: TCP}
