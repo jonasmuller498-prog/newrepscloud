@@ -109,8 +109,15 @@ class StagingDisabledTests(unittest.TestCase):
 
     def test_inputs_directory_commits_no_env_files(self):
         inputs = ROOT / "overlays/staging-disabled/inputs"
+        tracked = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files", "--",
+             "overlays/staging-disabled/inputs"],
+            check=True, text=True, capture_output=True,
+        )
         self.assertEqual(
-            {path.name for path in inputs.iterdir()}, {".gitignore", "README.md"})
+            {pathlib.Path(path).name for path in tracked.stdout.splitlines()},
+            {".gitignore", "README.md"},
+        )
         self.assertIn("*.env", (inputs / ".gitignore").read_text())
 
 
