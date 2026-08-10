@@ -76,6 +76,8 @@ def public_cidr(value, allow_test):
 
 
 def check_database(admin, runtime):
+    if admin["POSTGRES_USER"] != "postgres":
+        fail("POSTGRES_USER must be postgres for local peer authentication")
     for key in ("POSTGRES_PASSWORD", "DB_PASSWORD"):
         if not HEX64_RE.fullmatch((admin | runtime)[key]):
             fail(f"{key} must be generated 64-character hex")
@@ -108,7 +110,8 @@ def check_trunk(values):
     if values["DIALER_TRUNK_AUTH_MODE"] not in {"digest", "ip"}:
         fail("trunk auth mode must be digest or ip")
     uri = values["DIALER_TRUNK_SIP_URI"]
-    if not SIP_RE.fullmatch(uri) or re.search(r"\.(?:invalid|example|test|localhost)(?::|$)", uri):
+    blocked = r"(?:\.(?:invalid|example|test|localhost)|@localhost|sip:localhost)(?::|$)"
+    if not SIP_RE.fullmatch(uri) or re.search(blocked, uri):
         fail("trunk SIP URI must be exact sip:[account@]host:port")
     if values["DIALER_TRUNK_AUTH_MODE"] == "digest":
         for key in ("DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM"):
