@@ -55,12 +55,12 @@ class DeploymentTests(unittest.TestCase):
             }
             for name, value in values.items():
                 (inputs / name).write_text(value, encoding="utf-8")
-            subprocess.run(
+            result = subprocess.run(
                 ["kubectl", "kustomize", str(copy / "overlays/production")],
-                check=True,
                 text=True,
                 capture_output=True,
             )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_nodeports_are_exact_and_nonconflicting(self):
         manifests = "\n".join(path.read_text() for path in (ROOT / "engine").glob("*.yaml"))
