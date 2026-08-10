@@ -163,6 +163,8 @@ def check(directory, allow_test):
         fail("BACKUP_ACKNOWLEDGED must be true or false")
     if safety["BACKUP_STATUS"] not in {"unconfigured-suspended", "configured-suspended"}:
         fail("BACKUP_STATUS must explicitly report configured or unconfigured suspension")
+    if safety["BACKUP_DESTINATION"] != "UNCONFIGURED" and re.search(r"[@?#]", safety["BACKUP_DESTINATION"]):
+        fail("BACKUP_DESTINATION must be a non-secret target identifier")
     if safety["BACKUP_ACKNOWLEDGED"] == "true":
         if safety["BACKUP_STATUS"] != "configured-suspended":
             fail("acknowledged backups require configured-suspended status")

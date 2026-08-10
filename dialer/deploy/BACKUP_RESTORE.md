@@ -5,7 +5,9 @@ CronJob, but the CronJob has `suspend: true`. A second PVC in the same cluster
 is not disaster recovery. Configure and test an external Longhorn backup target
 before treating any PVC as durable. `dialer-safety-status` and the CronJob
 annotation make the current configuration state visible; production dialing
-validation requires an acknowledged external destination.
+validation requires an acknowledged external destination. Store only a
+non-secret target identifier in `safety.env`; never put a signed URL or
+credentials in that generated ConfigMap.
 
 ## Logical backups
 
