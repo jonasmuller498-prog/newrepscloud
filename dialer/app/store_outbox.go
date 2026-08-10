@@ -56,6 +56,8 @@ func (s *Store) LoadOriginateCommand(ctx context.Context, attemptID string) (Ori
 		WHERE a.id=$1 AND a.state='CLAIMED' AND cr.status='ACTIVE' AND c.state='RUNNING'
 		  AND c.dnc_attested_at>=clock_timestamp()-interval '31 days'
 		  AND ce.consent_at<=clock_timestamp()+interval '5 minutes'
+		  AND (clock_timestamp() AT TIME ZONE cr.timezone)::time>=c.window_start
+		  AND (clock_timestamp() AT TIME ZONE cr.timezone)::time<c.window_end
 		  AND NOT EXISTS(SELECT 1 FROM suppressions sp WHERE sp.phone_hash=r.phone_hash)`,
 		attemptID).Scan(&cmd.AttemptID, &cmd.ChannelID, &phoneCipher, &callerCipher, &cmd.Media)
 	if err != nil {
@@ -68,7 +70,11 @@ func (s *Store) LoadOriginateCommand(ctx context.Context, attemptID string) (Ori
 	if err != nil {
 		return cmd, err
 	}
-	if _, err = os.Stat(filepath.Join(s.config.MediaDir, filepath.Base(cmd.Media))); err != nil {
+	info, err := os.Stat(filepath.Join(s.config.MediaDir, filepath.Base(cmd.Media)))
+	if err != nil || !info.Mode().IsRegular() {
+		if err == nil {
+			err = os.ErrInvalid
+		}
 		return cmd, err
 	}
 	return cmd, nil
