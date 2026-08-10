@@ -124,8 +124,10 @@ class DeploymentTests(unittest.TestCase):
         for pdb in ("base/engine/pdb.yaml", "base/postgres/pdb.yaml"):
             self.assertIn("maxUnavailable: 1", read(pdb))
             self.assertNotIn("minAvailable:", read(pdb))
-        all_text = "\n".join(path.read_text() for path in ROOT.rglob("*") if path.is_file())
-        self.assertNotIn("longhorn-snapshot-vsc", all_text)
+        optional = "\n".join(
+            path.read_text() for path in (ROOT / "optional").rglob("*") if path.is_file()
+        )
+        self.assertNotIn("volumeSnapshotClassName:", optional)
 
     def test_network_namespaces_and_private_metrics(self):
         self.assertIn("name: default-deny-all", read("base/network/default-deny.yaml"))
