@@ -167,6 +167,7 @@ class AsteriskHardeningTests(unittest.TestCase):
         self.assertEqual(body.count("max_contacts=1"), 2)
         self.assertIn('signalTarget("TRUNK_SIGNAL_CIDR_PRIMARY")', body)
         self.assertIn('signalTarget("TRUNK_SIGNAL_CIDR_SECONDARY")', body)
+        self.assertIn('replacements["@@DIALER_PUBLIC_IPV4@@"]', body)
         self.assertIn(
             "name: dialer-network-values",
             read("base/engine/statefulset-init.yaml"),

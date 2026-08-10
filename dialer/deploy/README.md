@@ -1,9 +1,10 @@
 # Voice dialer deployment
 
-Kustomize assets for a new, isolated `voice-dialer` namespace on Rancher RKE2.
-They do not adopt, patch, or depend on any existing workload. The engine is one
-StatefulSet pod on node `runners`; it contains Asterisk 22.10.1 and the Go app.
-PostgreSQL 17 and both persistent data sets use Longhorn `ReadWriteOnce`.
+Kustomize assets for isolated `voice-dialer` staging and
+`voice-dialer-production` namespaces on Rancher RKE2. They never share Secrets
+or PVCs. The engine is one StatefulSet pod on node `runners`; it contains
+Asterisk 22.10.1 and the Go app. PostgreSQL 17 and both persistent data sets use
+Longhorn `ReadWriteOnce`.
 
 Nothing in this directory is an instruction to apply the placeholder base.
 The base exists so review and CI can render it without credentials. It generates
@@ -13,12 +14,12 @@ networks are TEST-NET ranges, the trunk is absent, `DIALING_ENABLED=false`, and
 
 ## Public and private surfaces
 
-- HTTPS: `dialer.playground.obvious.tech`, via the `nginx` Ingress class and
-  `letsencrypt-prod` ClusterIssuer.
-- Production SIP: `5.196.90.231:31100/UDP`, NodePort with source IP
+- Staging HTTPS: `dialer.playground.obvious.tech`; production requires a
+  distinct `PUBLIC_HOSTNAME`. Both use `nginx` and `letsencrypt-prod`.
+- Production SIP: `DIALER_PUBLIC_IPV4:31100/UDP`, NodePort with source IP
   preservation.
-- Production RTP: `5.196.90.231:32300-32499/UDP`, split across ten NodePort
-  Services.
+- Production RTP: `DIALER_PUBLIC_IPV4:32300-32499/UDP`, split across ten
+  NodePort Services.
 - ARI is loopback-only at `127.0.0.1:8088`; PostgreSQL is namespace-private.
 - The API Service targets only `8080`. Metrics use a separate private Service
   on `9090` and are not routed by the Ingress.
@@ -78,6 +79,7 @@ cd dialer/deploy
 ./validate.sh --staging-disabled
 kubectl diff -k overlays/staging-disabled
 kubectl apply -k overlays/staging-disabled
+./validate.sh --staging-disabled
 kubectl -n voice-dialer rollout status statefulset/postgres --timeout=10m
 kubectl -n voice-dialer rollout status statefulset/dialer-engine --timeout=15m
 curl --fail --show-error https://dialer.playground.obvious.tech/health/ready
@@ -88,11 +90,11 @@ argument; with a terminal and no argument it prompts only for that commit. It
 creates separate 256-bit credentials and keys without printing them. The input
 directory ignores `*.env` and has no carrier/network input.
 
-This overlay is permanently disabled-only and can never be patched into a
-dialing deployment. Do not add carrier values, enablement flags, transports, or
-SIP/RTP exposure to it. Use the production overlay later after all carrier,
-backup, compliance, and enablement reviews. See [RUNBOOK.md](RUNBOOK.md) for
-narrow token access and the isolated integration-test database procedure.
+This overlay is permanently disabled-only. Validation also inspects the live
+namespace and fails if stale SIP/RTP Services or carrier policies remain, since
+plain `kubectl apply` does not prune absent objects. Never use staging as a
+downgrade of production. See [RUNBOOK.md](RUNBOOK.md) for narrow token access
+and the isolated integration-test database procedure.
 
 ## Create production inputs safely
 
@@ -106,12 +108,17 @@ umask 077
 ./validate.sh --production
 ```
 
-The helper prompts without placing passwords or tokens in shell history,
-generates separate admin/runtime database credentials and independent 256-bit
-application values, writes mode-`0600` files
+The helper requires a distinct production hostname and public SIP/RTP IPv4,
+prompts without placing passwords or tokens in shell history, generates
+separate admin/runtime database credentials and independent 256-bit application
+values, writes mode-`0600` files
 below `overlays/production/inputs/`, and never prints secret values. That
 directory ignores all `*.env` files. Do not use `--from-literal` with secrets
 on a shared shell because command arguments can be observable.
+
+Production always renders into `voice-dialer-production`, including independent
+PVCs, Secrets, Ingress certificate, and backup resources. Migrate data only
+through the reviewed backup/restore procedure; never adopt staging claims.
 
 The helper deliberately creates only `DIALER_TRUNK_ENABLED=false`; it never
 guesses the SBC pair, account, auth, transport, media profile, or caller ID. Add

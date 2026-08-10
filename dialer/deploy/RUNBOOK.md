@@ -10,6 +10,7 @@ cd dialer/deploy
 ./validate.sh --staging-disabled
 kubectl diff -k overlays/staging-disabled
 kubectl apply -k overlays/staging-disabled
+./validate.sh --staging-disabled
 kubectl -n voice-dialer rollout status statefulset/postgres --timeout=10m
 kubectl -n voice-dialer rollout status statefulset/dialer-engine --timeout=15m
 curl --fail --show-error https://dialer.playground.obvious.tech/health/live
@@ -51,11 +52,12 @@ kubectl -n voice-dialer exec postgres-0 -c postgres -- sh -ec \
   'dropdb --force -U "$POSTGRES_USER" "$1"' sh "$TEST_DB"
 unset DB_USER DB_PASSWORD RUNTIME_SECRET TEST_DB PF_PID
 ```
-The staging-disabled overlay can never be patched to enable dialing. Do not add
-carrier CIDRs, trunk fields, PJSIP transports, or public SIP/RTP Services; use
-the production overlay later and complete all production gates.
+The staging-disabled overlay owns only `voice-dialer` and can never be patched
+to enable dialing. Production owns `voice-dialer-production`; never apply either
+overlay to the other's namespace or migrate data by reusing its PVCs.
 ## 1. Resolve inputs and RKE2 preflight
 Do not start production rendering until owners provide all of:
+- a distinct production HTTPS hostname and the dialer SIP/RTP public IPv4;
 - both SBC IPv4 URIs, auth mode, and confirmed UDP plus `none`/`sdes` media profile;
 - matching signaling `/32`s for both URIs and the exact carrier media range;
 - approved CPS;
@@ -72,7 +74,7 @@ kubectl -n kube-system get pods -l app.kubernetes.io/name=rke2-ingress-nginx --s
 kubectl -n kube-system get pods -l k8s-app=kube-dns --show-labels
 kubectl get services -A -o json > /tmp/services-before.json
 ```
-Confirm `runners` reports public IP `5.196.90.231`, is schedulable, and has
+Confirm `runners` reports the configured `DIALER_PUBLIC_IPV4`, is schedulable, and has
 capacity for both engine containers and build init containers. Confirm no live
 Service claims `31100` or `32300-32499` in either a `nodePort` or
 `healthCheckNodePort`. The tracked root B2BUA range (`32061`,
@@ -107,7 +109,7 @@ or config warnings, and repeat controlled PJSIP/ARI call and playback checks.
 Keep `autoload=no`; a missing required module must continue to fail startup.
 Before first apply, inspect retained claims:
 ```bash
-kubectl -n voice-dialer get pvc
+kubectl -n voice-dialer-production get pvc --ignore-not-found
 ```
 If an earlier placeholder deployment initialized `data-postgres-0`, stop. Do
 not reuse or delete it until its ownership and retention requirements are
@@ -117,17 +119,17 @@ Review the diff, then apply only the production overlay:
 ```bash
 kubectl diff -k overlays/production
 kubectl apply -k overlays/production
-kubectl -n voice-dialer rollout status statefulset/postgres --timeout=10m
-kubectl -n voice-dialer rollout status statefulset/dialer-engine --timeout=15m
+kubectl -n voice-dialer-production rollout status statefulset/postgres --timeout=10m
+kubectl -n voice-dialer-production rollout status statefulset/dialer-engine --timeout=15m
 ```
 The first engine start requires public HTTPS egress for source/module fetches.
 Inspect init logs without printing environment values:
 
 ```bash
-kubectl -n voice-dialer logs dialer-engine-0 -c render-asterisk-config
-kubectl -n voice-dialer logs dialer-engine-0 -c build-dialer-app
-kubectl -n voice-dialer logs dialer-engine-0 -c asterisk
-kubectl -n voice-dialer logs dialer-engine-0 -c app
+kubectl -n voice-dialer-production logs dialer-engine-0 -c render-asterisk-config
+kubectl -n voice-dialer-production logs dialer-engine-0 -c build-dialer-app
+kubectl -n voice-dialer-production logs dialer-engine-0 -c asterisk
+kubectl -n voice-dialer-production logs dialer-engine-0 -c app
 ```
 
 The app owns schema migrations and must use an advisory lock so one failed
@@ -137,10 +139,10 @@ period. The app must stop scheduling immediately on SIGTERM and drain or mark
 in-flight calls before exiting.
 ## 4. Disabled-state checks
 ```bash
-kubectl -n voice-dialer get pods,pvc,svc,ingress,pdb,networkpolicy
-kubectl -n voice-dialer exec dialer-engine-0 -c asterisk -- \
+kubectl -n voice-dialer-production get pods,pvc,svc,ingress,pdb,networkpolicy
+kubectl -n voice-dialer-production exec dialer-engine-0 -c asterisk -- \
   asterisk -C /config/asterisk.conf -rx 'pjsip show endpoints'
-kubectl -n voice-dialer exec dialer-engine-0 -c asterisk -- \
+kubectl -n voice-dialer-production exec dialer-engine-0 -c asterisk -- \
   asterisk -C /config/asterisk.conf -rx 'http show status'
 ```
 

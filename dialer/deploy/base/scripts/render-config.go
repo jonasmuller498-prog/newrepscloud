@@ -79,10 +79,8 @@ func trunkBlock(enabled bool) string {
 	} else if mediaEncryption != "sdes" {
 		panic("DIALER_TRUNK_MEDIA_ENCRYPTION must be exactly none or sdes")
 	}
-	uris := []string{
-		required("DIALER_TRUNK_SIP_URI_PRIMARY"),
-		required("DIALER_TRUNK_SIP_URI_SECONDARY"),
-	}
+	uris := []string{required("DIALER_TRUNK_SIP_URI_PRIMARY"),
+		required("DIALER_TRUNK_SIP_URI_SECONDARY")}
 	if uris[0] == uris[1] {
 		panic("outbound SBC URIs must be distinct")
 	}
@@ -166,6 +164,9 @@ func main() {
 		"@@ARI_USER@@":     ariUser,
 		"@@ARI_PASSWORD@@": ariPassword,
 		"@@TRUNK_BLOCK@@":  trunkBlock(enabledText == "true"),
+	}
+	if publicIP := os.Getenv("DIALER_PUBLIC_IPV4"); publicIP != "" {
+		replacements["@@DIALER_PUBLIC_IPV4@@"] = publicIP
 	}
 	if err := os.MkdirAll("/rendered", 0750); err != nil {
 		panic(err)

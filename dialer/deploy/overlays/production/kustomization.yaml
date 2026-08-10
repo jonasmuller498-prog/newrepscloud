@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: voice-dialer
+namespace: voice-dialer-production
 resources:
   - ../../base
 configMapGenerator:
@@ -37,6 +37,17 @@ generatorOptions:
   labels:
     app.kubernetes.io/part-of: voice-dialer
 replacements:
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.PUBLIC_HOSTNAME
+    targets:
+      - select:
+          kind: Ingress
+          name: dialer
+        fieldPaths:
+          - spec.tls.0.hosts.0
+          - spec.rules.0.host
   - source:
       kind: ConfigMap
       name: dialer-network-values
@@ -92,3 +103,24 @@ replacements:
           name: postgres-logical-backup
         fieldPaths:
           - metadata.annotations.[voice-dialer.obvious.tech/backup-status]
+patches:
+  - target:
+      version: v1
+      kind: Namespace
+      name: voice-dialer
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: voice-dialer-production
+      - op: replace
+        path: /metadata/labels/kubernetes.io~1metadata.name
+        value: voice-dialer-production
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: dialer
+    patch: |-
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: dialer-production-tls

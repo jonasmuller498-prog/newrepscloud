@@ -38,6 +38,16 @@ render_staging() {
   python3 "$deploy_root/scripts/check-staging-render.py" "$tmp/staging.json"
 }
 
+check_live_staging() {
+  if ! kubectl get namespace voice-dialer --request-timeout=5s >/dev/null 2>&1; then
+    echo "SKIP: live staging namespace does not exist"
+    return
+  fi
+  kubectl -n voice-dialer get services,networkpolicies -o json \
+    --request-timeout=5s >"$tmp/staging-live.json"
+  python3 "$root/scripts/check-staging-live.py" "$tmp/staging-live.json"
+}
+
 render root "$root"
 render base "$root/base"
 render monitoring "$root/optional/monitoring"
@@ -52,6 +62,7 @@ case "$mode" in
     ;;
   --staging-disabled)
     render_staging "$root"
+    check_live_staging
     ;;
   --static)
     cp -a "$root" "$tmp/deploy"
@@ -78,7 +89,8 @@ sh -n "$root/base/postgres/init-runtime.sh"
 python3 - "$root/scripts/check-production-inputs.py" \
   "$root/scripts/input_rules.py" \
   "$root/scripts/check-staging-inputs.py" \
-  "$root/scripts/check-staging-render.py" "$root/scripts/check-live-ports.py" <<'PY'
+  "$root/scripts/check-staging-render.py" "$root/scripts/check-staging-live.py" \
+  "$root/scripts/check-live-ports.py" <<'PY'
 import ast, pathlib, sys
 for name in sys.argv[1:]:
     ast.parse(pathlib.Path(name).read_text(encoding="utf-8"), filename=name)

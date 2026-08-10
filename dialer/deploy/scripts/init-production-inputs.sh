@@ -18,13 +18,24 @@ read -r -p "Reviewed 40-character source commit SHA: " source_ref
   exit 64
 }
 
+read -r -p "Distinct production HTTPS hostname: " public_hostname
+read -r -p "Dialer public IPv4 used for SIP and RTP: " public_ipv4
 read -r -p "Primary carrier signaling IPv4 /32: " signal_cidr_primary
 read -r -p "Secondary carrier signaling IPv4 /32: " signal_cidr_secondary
 read -r -p "Exact carrier media CIDR: " media_cidr
-python3 - "$signal_cidr_primary" "$signal_cidr_secondary" "$media_cidr" <<'PY'
-import ipaddress, sys
-signals = [ipaddress.ip_network(value, strict=True) for value in sys.argv[1:3]]
-media = ipaddress.ip_network(sys.argv[3], strict=True)
+python3 - "$public_hostname" "$public_ipv4" \
+  "$signal_cidr_primary" "$signal_cidr_secondary" "$media_cidr" <<'PY'
+import ipaddress, re, sys
+hostname = sys.argv[1]
+if (not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", hostname)
+        or hostname == "dialer.playground.obvious.tech"
+        or hostname.endswith((".invalid", ".example", ".test", ".localhost"))):
+    raise SystemExit("production hostname must be a distinct lowercase public FQDN")
+public_ip = ipaddress.ip_address(sys.argv[2])
+signals = [ipaddress.ip_network(value, strict=True) for value in sys.argv[3:5]]
+media = ipaddress.ip_network(sys.argv[5], strict=True)
+if public_ip.version != 4 or not public_ip.is_global:
+    raise SystemExit("dialer public address must be a public IPv4")
 if any(item.version != 4 or not item.is_global or item.prefixlen != 32 for item in signals):
     raise SystemExit("carrier signaling CIDRs must be distinct public IPv4 /32 networks")
 if signals[0] == signals[1]:
@@ -71,7 +82,9 @@ printf '%s\n' \
   'ARI_APP=voice-dialer' 'ARI_DIAL_CONTEXT=dialer-outbound' \
   'DIALER_SOURCE_REPOSITORY=https://github.com/jonasmuller498-prog/newrepscloud.git' \
   "DIALER_SOURCE_REF=${source_ref,,}" >"$out/runtime.env"
-printf '%s\n' "TRUNK_SIGNAL_CIDR_PRIMARY=$signal_cidr_primary" \
+printf '%s\n' "PUBLIC_HOSTNAME=$public_hostname" \
+  "DIALER_PUBLIC_IPV4=$public_ipv4" \
+  "TRUNK_SIGNAL_CIDR_PRIMARY=$signal_cidr_primary" \
   "TRUNK_SIGNAL_CIDR_SECONDARY=$signal_cidr_secondary" \
   "TRUNK_MEDIA_CIDR=$media_cidr" >"$out/network.env"
 printf '%s\n' "BACKUP_STATUS=$backup_status" \

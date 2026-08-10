@@ -18,11 +18,11 @@ destination. Test restore first, update `safety.env`, then enable only the
 CronJob:
 
 ```bash
-kubectl -n voice-dialer patch cronjob postgres-logical-backup \
+kubectl -n voice-dialer-production patch cronjob postgres-logical-backup \
   --type=merge -p '{"spec":{"suspend":false}}'
-kubectl -n voice-dialer create job --from=cronjob/postgres-logical-backup \
+kubectl -n voice-dialer-production create job --from=cronjob/postgres-logical-backup \
   postgres-logical-backup-manual
-kubectl -n voice-dialer logs job/postgres-logical-backup-manual
+kubectl -n voice-dialer-production logs job/postgres-logical-backup-manual
 ```
 
 Each run creates a PostgreSQL custom-format dump atomically and removes dumps
@@ -33,7 +33,7 @@ and perform a full restore drill in a disposable namespace.
 To pause:
 
 ```bash
-kubectl -n voice-dialer patch cronjob postgres-logical-backup \
+kubectl -n voice-dialer-production patch cronjob postgres-logical-backup \
   --type=merge -p '{"spec":{"suspend":true}}'
 ```
 

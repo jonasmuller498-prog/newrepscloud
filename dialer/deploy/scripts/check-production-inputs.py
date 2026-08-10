@@ -14,7 +14,10 @@ FILES = {
         "ARI_URL", "ARI_APP", "ARI_DIAL_CONTEXT",
         "DIALER_SOURCE_REPOSITORY", "DIALER_SOURCE_REF",
     },
-    "network.env": {"TRUNK_SIGNAL_CIDR_PRIMARY", "TRUNK_SIGNAL_CIDR_SECONDARY", "TRUNK_MEDIA_CIDR"},
+    "network.env": {
+        "PUBLIC_HOSTNAME", "DIALER_PUBLIC_IPV4", "TRUNK_SIGNAL_CIDR_PRIMARY",
+        "TRUNK_SIGNAL_CIDR_SECONDARY", "TRUNK_MEDIA_CIDR",
+    },
     "safety.env": {"BACKUP_STATUS", "BACKUP_DESTINATION", "BACKUP_ACKNOWLEDGED"},
     "postgres-admin.env": {"POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"},
     "postgres-runtime.env": {"DB_USER", "DB_PASSWORD", "DB_NAME", "DATABASE_URL"},
@@ -34,6 +37,7 @@ HEX64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$")
+HOST_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 
 
 def check_database(admin, runtime):
@@ -118,6 +122,12 @@ def check(directory, allow_test):
         fail("DIALER_SOURCE_REF must be a lowercase immutable commit SHA")
     if not allow_test and len(set(ref)) == 1:
         fail("DIALER_SOURCE_REF looks like a placeholder")
+    hostname = network["PUBLIC_HOSTNAME"]
+    if not HOST_RE.fullmatch(hostname) or hostname == "dialer.playground.obvious.tech":
+        fail("production hostname must be a distinct lowercase FQDN")
+    if not allow_test and hostname.endswith((".invalid", ".example", ".test", ".localhost")):
+        fail("production hostname must not use a reserved suffix")
+    public_cidr(network["DIALER_PUBLIC_IPV4"] + "/32", allow_test)
     signals = tuple(public_cidr(network[key], allow_test) for key in (
         "TRUNK_SIGNAL_CIDR_PRIMARY", "TRUNK_SIGNAL_CIDR_SECONDARY"))
     public_cidr(network["TRUNK_MEDIA_CIDR"], allow_test)

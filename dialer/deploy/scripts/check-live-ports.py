@@ -8,9 +8,9 @@ DESIRED = {31100, *range(32300, 32500)}
 
 def expected_owner(port):
     if port == 31100:
-        return ("voice-dialer", "dialer-sip")
+        return ("voice-dialer-production", "dialer-sip")
     start = 32300 + ((port - 32300) // 20) * 20
-    return ("voice-dialer", f"dialer-rtp-{start}-{start + 19}")
+    return ("voice-dialer-production", f"dialer-rtp-{start}-{start + 19}")
 
 
 def main():
