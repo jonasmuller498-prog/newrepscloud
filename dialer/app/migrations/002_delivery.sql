@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS call_attempts (
     id uuid PRIMARY KEY,
     campaign_recipient_id uuid NOT NULL REFERENCES campaign_recipients(id),
+    recipient_id uuid NOT NULL REFERENCES recipients(id),
     attempt_no integer NOT NULL CHECK (attempt_no > 0),
     channel_id text NOT NULL UNIQUE,
     slot_no integer NOT NULL CHECK (slot_no BETWEEN 1 AND 100),
@@ -16,7 +17,7 @@ CREATE TABLE IF NOT EXISTS call_attempts (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_attempt_per_recipient
-    ON call_attempts (campaign_recipient_id)
+    ON call_attempts (recipient_id)
     WHERE state IN ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED');
 
 CREATE TABLE IF NOT EXISTS dialer_slots (
@@ -77,3 +78,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS audit_resource
     ON audit_log (resource_type, resource_id, created_at DESC);
+
+DROP TRIGGER IF EXISTS audit_log_immutable ON audit_log;
+CREATE TRIGGER audit_log_immutable
+BEFORE UPDATE OR DELETE ON audit_log
+FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();

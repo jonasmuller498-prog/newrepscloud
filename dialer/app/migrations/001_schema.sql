@@ -89,3 +89,28 @@ CREATE TABLE IF NOT EXISTS campaign_recipients (
 
 CREATE INDEX IF NOT EXISTS campaign_recipient_queue
     ON campaign_recipients (next_attempt_at, campaign_id) WHERE status = 'QUEUED';
+
+CREATE OR REPLACE FUNCTION reject_immutable_change() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW IS NOT DISTINCT FROM OLD THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION '% rows are immutable', TG_TABLE_NAME;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS message_assets_immutable ON message_assets;
+CREATE TRIGGER message_assets_immutable
+BEFORE UPDATE OR DELETE ON message_assets
+FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();
+
+DROP TRIGGER IF EXISTS consent_evidence_immutable ON consent_evidence;
+CREATE TRIGGER consent_evidence_immutable
+BEFORE UPDATE OR DELETE ON consent_evidence
+FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();
+
+DROP TRIGGER IF EXISTS campaign_approvals_immutable ON campaign_approvals;
+CREATE TRIGGER campaign_approvals_immutable
+BEFORE UPDATE OR DELETE ON campaign_approvals
+FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();

@@ -30,7 +30,7 @@ func LoadConfig() (Config, error) { return loadConfig(os.LookupEnv) }
 func loadConfig(get func(string) (string, bool)) (Config, error) {
 	c := Config{
 		Addr:                value(get, "HTTP_ADDR", ":8080"),
-		DatabaseURL:         value(get, "DATABASE_URL", ""),
+		DatabaseURL:         aliasValue(get, "DATABASE_URL", "DB_URL", ""),
 		MediaDir:            value(get, "MEDIA_DIR", "/var/lib/dialer/media"),
 		ARIURL:              strings.TrimRight(value(get, "ARI_URL", ""), "/"),
 		ARIApp:              value(get, "ARI_APP", ""),
@@ -39,8 +39,8 @@ func loadConfig(get func(string) (string, bool)) (Config, error) {
 		ARIEndpointTemplate: value(get, "ARI_ENDPOINT_TEMPLATE", "PJSIP/%s@outbound"),
 		ARIContext:          value(get, "ARI_CONTEXT", "outbound-compliance"),
 		ARIExtension:        value(get, "ARI_EXTENSION", "s"),
-		OperatorToken:       value(get, "OPERATOR_API_TOKEN", ""),
-		ApproverToken:       value(get, "APPROVER_API_TOKEN", ""),
+		OperatorToken:       aliasValue(get, "OPERATOR_API_TOKEN", "OPERATOR_TOKEN", ""),
+		ApproverToken:       aliasValue(get, "APPROVER_API_TOKEN", "APPROVER_TOKEN", ""),
 		MaxBodyBytes:        20 << 20,
 		AssetMaxDuration:    10 * time.Minute,
 	}
@@ -93,8 +93,9 @@ func (c Config) Validate() error {
 			return errors.New("ARI settings are required when dialing is enabled")
 		}
 		u, err := url.Parse(c.ARIURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return errors.New("ARI_URL must be an absolute http(s) URL")
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+			u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return errors.New("ARI_URL must be an absolute http(s) base URL without credentials or query")
 		}
 	}
 	return nil
@@ -105,6 +106,13 @@ func value(get func(string) (string, bool), key, fallback string) string {
 		return strings.TrimSpace(v)
 	}
 	return fallback
+}
+
+func aliasValue(get func(string) (string, bool), primary, alias, fallback string) string {
+	if value, ok := get(primary); ok {
+		return strings.TrimSpace(value)
+	}
+	return value(get, alias, fallback)
 }
 
 func boolValue(get func(string) (string, bool), key string, fallback bool) (bool, error) {

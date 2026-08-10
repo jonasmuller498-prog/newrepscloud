@@ -19,6 +19,9 @@ func ariTestConfig(serverURL string) Config {
 func TestARIOriginateRequest(t *testing.T) {
 	var checked bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ari/channels" {
+			t.Errorf("unexpected ARI path %q", r.URL.Path)
+		}
 		user, password, ok := r.BasicAuth()
 		if !ok || user != "ari-user" || password != "ari-pass" {
 			t.Error("missing ARI basic authentication")
@@ -43,7 +46,7 @@ func TestARIOriginateRequest(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	client := NewARIClient(ariTestConfig(server.URL))
+	client := NewARIClient(ariTestConfig(server.URL + "/ari"))
 	result, err := client.Originate(context.Background(), OriginateCommand{
 		AttemptID: "attempt-id", ChannelID: "dialer-channel", Phone: "+14155552671",
 		CallerID: "+14155550100", Media: "asset.wav",

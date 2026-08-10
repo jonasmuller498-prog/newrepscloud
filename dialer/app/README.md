@@ -24,7 +24,7 @@ message-started, invalid, forbidden, opt-out, and ambiguous outcomes do not retr
 
 | Variable | Default / requirement |
 | --- | --- |
-| `DATABASE_URL` | Required PostgreSQL URL |
+| `DATABASE_URL` (`DB_URL` alias) | Required PostgreSQL URL |
 | `HTTP_ADDR` | `:8080` |
 | `DIALING_ENABLED` | `false` |
 | `MAX_CONCURRENCY` | `20`; hard maximum `100` |
@@ -35,8 +35,8 @@ message-started, invalid, forbidden, opt-out, and ambiguous outcomes do not retr
 | `ARI_APP`, `ARI_USER`, `ARI_PASSWORD` | Required when dialing is enabled |
 | `ARI_ENDPOINT_TEMPLATE` | `PJSIP/%s@outbound`; exactly one `%s` |
 | `ARI_CONTEXT`, `ARI_EXTENSION` | `outbound-compliance`, `s` |
-| `OPERATOR_API_TOKEN` | Required |
-| `APPROVER_API_TOKEN` | Required and must differ from operator |
+| `OPERATOR_API_TOKEN` (`OPERATOR_TOKEN` alias) | Required |
+| `APPROVER_API_TOKEN` (`APPROVER_TOKEN` alias) | Required and must differ from operator |
 | `HMAC_KEY` | Required, at least 32 raw or base64-decoded bytes |
 
 Use a dedicated database role, TLS for PostgreSQL and ARI, a TLS reverse proxy for

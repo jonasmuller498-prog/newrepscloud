@@ -65,6 +65,14 @@ func (s *Store) suppressTx(
 	if err != nil {
 		return err
 	}
+	_, err = tx.Exec(ctx, `UPDATE campaign_recipients cr SET status='SUPPRESSED'
+		FROM recipients r WHERE r.id=cr.recipient_id AND r.phone_hash=$1
+		AND cr.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM call_attempts a
+		WHERE a.campaign_recipient_id=cr.id AND a.state IN
+		('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED'))`, hash)
+	if err != nil {
+		return err
+	}
 	_, err = tx.Exec(ctx, `UPDATE dialer_slots SET attempt_id=NULL,leased_at=NULL
 		WHERE attempt_id IN (SELECT a.id FROM call_attempts a JOIN campaign_recipients cr
 		ON cr.id=a.campaign_recipient_id JOIN recipients r ON r.id=cr.recipient_id

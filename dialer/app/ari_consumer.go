@@ -68,26 +68,30 @@ func (c *ARIConsumer) readEvents(ctx context.Context, conn *websocket.Conn) {
 }
 
 func (c *ARIConsumer) handleEvent(ctx context.Context, event ARIEvent, raw []byte) error {
-	attemptID, previous, inserted, err := c.store.PersistARIEvent(ctx, event, raw)
-	if err != nil || !inserted {
+	eventCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+	defer cancel()
+	attemptID, previous, inserted, err := c.store.PersistARIEvent(eventCtx, event, raw)
+	if err != nil {
 		return err
 	}
-	c.metrics.ariEvents.Add(1)
+	if inserted {
+		c.metrics.ariEvents.Add(1)
+	}
 	if event.Type == "ChannelDtmfReceived" && event.Digit == "9" {
-		return c.store.OptOutAttempt(ctx, attemptID, "ari_dtmf_9", "ari:"+c.store.config.ARIApp)
+		return c.store.OptOutAttempt(eventCtx, attemptID, "ari_dtmf_9", "ari:"+c.store.config.ARIApp)
 	}
 	if state := eventState(event); state != "" {
-		return c.store.UpdateAttemptState(ctx, attemptID, state)
+		return c.store.UpdateAttemptState(eventCtx, attemptID, state)
 	}
 	switch event.Type {
 	case "PlaybackFinished":
-		return c.store.FinishAttempt(ctx, attemptID, "completed")
+		return c.store.FinishAttempt(eventCtx, attemptID, "completed")
 	case "ChannelDestroyed", "StasisEnd":
 		outcome := destroyedOutcome(event, previous)
 		if outcome == "ambiguous" {
 			c.metrics.quarantined.Add(1)
 		}
-		return c.store.FinishAttempt(ctx, attemptID, outcome)
+		return c.store.FinishAttempt(eventCtx, attemptID, outcome)
 	}
 	return nil
 }

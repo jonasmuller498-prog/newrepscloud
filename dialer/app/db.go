@@ -19,7 +19,7 @@ type Store struct {
 func openStore(ctx context.Context, cfg Config, protector *Protector) (*Store, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
+		return nil, errors.New("invalid DATABASE_URL")
 	}
 	poolCfg.MaxConns = int32(min(cfg.MaxConcurrency+12, 100))
 	poolCfg.MinConns = 2

@@ -16,8 +16,11 @@ func (r *Reconciler) Run(ctx context.Context) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
-		r.gate.mediaReady.Store(checkMediaDirectory(r.store.config.MediaDir))
-		if err := r.reconcile(ctx); err != nil && ctx.Err() == nil {
+		runCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		r.gate.mediaReady.Store(r.store.MediaReady(runCtx))
+		err := r.reconcile(runCtx)
+		cancel()
+		if err != nil && ctx.Err() == nil {
 			r.log.Error("reconciliation failed", "error", err)
 		}
 		select {
@@ -46,6 +49,12 @@ func (r *Reconciler) reconcile(ctx context.Context) error {
 	)
 	UPDATE outbox o SET state='DONE',processed_at=now(),processing_at=NULL
 	FROM quarantined q WHERE o.aggregate_id=q.id`)
+	if err == nil {
+		_, err = tx.Exec(ctx, `UPDATE outbox o SET state='DONE',processed_at=now(),processing_at=NULL
+			FROM call_attempts a WHERE o.aggregate_id=a.id AND o.state='PROCESSING'
+			AND o.processing_at<now()-interval '2 minutes'
+			AND a.state NOT IN ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED')`)
+	}
 	if err == nil {
 		_, err = tx.Exec(ctx, `WITH stale AS (
 			UPDATE call_attempts SET state='AMBIGUOUS',outcome='ambiguous',

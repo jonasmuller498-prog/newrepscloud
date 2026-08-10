@@ -70,3 +70,21 @@ func TestEnabledConfigRequiresARI(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestConfigAliases(t *testing.T) {
+	values := map[string]string{
+		"DB_URL":          "postgres://localhost/dialer",
+		"OPERATOR_TOKEN":  "operator",
+		"APPROVER_TOKEN":  "approver",
+		"HMAC_KEY":        strings.Repeat("k", 32),
+		"MAX_CONCURRENCY": "1",
+	}
+	config, err := loadConfig(configLookup(values))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.DatabaseURL != values["DB_URL"] ||
+		config.OperatorToken != "operator" || config.ApproverToken != "approver" {
+		t.Fatalf("aliases not loaded: %+v", config)
+	}
+}

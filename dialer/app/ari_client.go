@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -46,9 +47,9 @@ func (c *ARIClient) Originate(ctx context.Context, cmd OriginateCommand) (Origin
 	if err != nil {
 		return result, err
 	}
-	base.Path = path.Join(base.Path, "ari/channels")
+	base.Path = ariPath(base.Path, "channels")
 	query := base.Query()
-	query.Set("endpoint", fmt.Sprintf(c.config.ARIEndpointTemplate, cmd.Phone))
+	query.Set("endpoint", strings.Replace(c.config.ARIEndpointTemplate, "%s", cmd.Phone, 1))
 	query.Set("extension", c.config.ARIExtension)
 	query.Set("context", c.config.ARIContext)
 	query.Set("priority", "1")
@@ -102,7 +103,7 @@ func (c *ARIClient) ConnectEvents(ctx context.Context) (*websocket.Conn, error) 
 	} else {
 		base.Scheme = "ws"
 	}
-	base.Path = path.Join(base.Path, "ari/events")
+	base.Path = ariPath(base.Path, "events")
 	query := base.Query()
 	query.Set("app", c.config.ARIApp)
 	query.Set("subscribeAll", "false")
@@ -113,4 +114,12 @@ func (c *ARIClient) ConnectEvents(ctx context.Context) (*websocket.Conn, error) 
 	header.Set("Authorization", "Basic "+credentials)
 	conn, _, err := c.dialer.DialContext(ctx, base.String(), header)
 	return conn, err
+}
+
+func ariPath(basePath, resource string) string {
+	clean := strings.TrimRight(basePath, "/")
+	if path.Base(clean) == "ari" {
+		return path.Join(clean, resource)
+	}
+	return path.Join(clean, "ari", resource)
 }
