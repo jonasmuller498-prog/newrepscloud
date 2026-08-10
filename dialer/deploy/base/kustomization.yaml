@@ -28,6 +28,7 @@ resources:
   - ingress.yaml
   - network/default-deny.yaml
   - network/app-ingress.yaml
+  - network/acme-solver.yaml
   - network/carrier-ingress.yaml
   - network/engine-egress.yaml
   - network/database.yaml
