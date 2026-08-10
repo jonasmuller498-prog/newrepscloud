@@ -108,7 +108,9 @@ class AsteriskHardeningTests(unittest.TestCase):
             option("base/asterisk/cdr.conf", "channeldefaultenabled"), "no"
         )
         self.assertEqual(option("base/asterisk/cel.conf", "enable"), "no")
-        self.assertEqual(option("base/asterisk/ccss.conf", "enabled"), "no")
+        ccss = read("base/asterisk/ccss.conf")
+        self.assertIn("[general]", ccss)
+        self.assertNotRegex(ccss, r"(?m)^\s*enabled\s*=")
 
     def test_stasis_pool_is_bounded(self):
         body = read("base/asterisk/stasis.conf")
