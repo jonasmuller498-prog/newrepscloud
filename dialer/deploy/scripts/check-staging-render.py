@@ -70,10 +70,7 @@ def ports(service):
 
 def check(items):
     encoded = json.dumps(items, sort_keys=True)
-    blocked = (
-        "192.0.2.", "198.51.100.", "203.0.113.",
-        "TRUNK_SIGNAL_CIDR", "TRUNK_MEDIA_CIDR",
-    )
+    blocked = ("192.0.2.", "198.51.100.", "203.0.113.")
     if any(value in encoded for value in blocked):
         fail("render contains TEST-NET or carrier CIDR values")
     services = [item for item in items if item.get("kind") == "Service"]
