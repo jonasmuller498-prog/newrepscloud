@@ -30,7 +30,8 @@ class DeploymentTests(unittest.TestCase):
         rendered = result.stdout
         self.assertIn("namespace: voice-dialer", rendered)
         self.assertIn("kind: StatefulSet", rendered)
-        self.assertNotIn("@@TRUNK_BLOCK@@", rendered)
+        self.assertIn("@@TRUNK_BLOCK@@", rendered)
+        self.assertIn("- /scripts/render-config.go", rendered)
 
     def test_production_overlay_renders_with_untracked_inputs(self):
         with tempfile.TemporaryDirectory() as temp:
