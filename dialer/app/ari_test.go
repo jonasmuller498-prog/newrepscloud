@@ -11,8 +11,14 @@ import (
 func ariTestConfig(serverURL string) Config {
 	return Config{
 		ARIURL: serverURL, ARIApp: "broadcast", ARIUser: "ari-user",
-		ARIPassword: "ari-pass", ARIEndpointTemplate: "PJSIP/%s@carrier",
-		ARIContext: "outbound", ARIExtension: "s",
+		ARIPassword: "ari-pass", ARIEndpoint: "carrier",
+	}
+}
+
+func ariTestCommand() OriginateCommand {
+	return OriginateCommand{
+		AttemptID: "attempt-id", ChannelID: "dialer-channel", Phone: "+14155552671",
+		CallerID: "+14155550100", MediaSHA: "asset",
 	}
 }
 
@@ -29,8 +35,13 @@ func TestARIOriginateRequest(t *testing.T) {
 		query := r.URL.Query()
 		if query.Get("endpoint") != "PJSIP/+14155552671@carrier" ||
 			query.Get("channelId") != "dialer-channel" ||
-			query.Get("context") != "outbound" || query.Get("app") != "broadcast" {
+			query.Get("app") != "broadcast" || query.Get("appArgs") != "attempt-id" {
 			t.Errorf("unexpected query: %v", query)
+		}
+		for _, forbidden := range []string{"context", "extension", "priority"} {
+			if query.Has(forbidden) {
+				t.Errorf("originate mixed Stasis and dialplan parameter %q", forbidden)
+			}
 		}
 		var payload struct {
 			Variables map[string]string `json:"variables"`
@@ -38,8 +49,7 @@ func TestARIOriginateRequest(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload.Variables["DIALER_ATTEMPT_ID"] != "attempt-id" ||
-			payload.Variables["DIALER_MEDIA"] != "asset.wav" {
+		if payload.Variables["DIALER_ATTEMPT_ID"] != "attempt-id" {
 			t.Errorf("unexpected variables: %v", payload.Variables)
 		}
 		checked = true
@@ -47,10 +57,7 @@ func TestARIOriginateRequest(t *testing.T) {
 	}))
 	defer server.Close()
 	client := NewARIClient(ariTestConfig(server.URL + "/ari"))
-	result, err := client.Originate(context.Background(), OriginateCommand{
-		AttemptID: "attempt-id", ChannelID: "dialer-channel", Phone: "+14155552671",
-		CallerID: "+14155550100", Media: "asset.wav",
-	})
+	result, err := client.Originate(context.Background(), ariTestCommand())
 	if err != nil || !result.Accepted || !checked {
 		t.Fatalf("result=%+v checked=%v err=%v", result, checked, err)
 	}
@@ -72,7 +79,7 @@ func TestARIOriginateOutcomeMapping(t *testing.T) {
 			w.WriteHeader(test.status)
 		}))
 		client := NewARIClient(ariTestConfig(server.URL))
-		result, err := client.Originate(context.Background(), OriginateCommand{})
+		result, err := client.Originate(context.Background(), ariTestCommand())
 		server.Close()
 		if err == nil || result.Outcome != test.outcome || result.Uncertain != test.uncertain {
 			t.Errorf("status %d: result=%+v err=%v", test.status, result, err)
@@ -85,7 +92,7 @@ func TestARITransportFailureIsAmbiguous(t *testing.T) {
 	url := server.URL
 	server.Close()
 	result, err := NewARIClient(ariTestConfig(url)).
-		Originate(context.Background(), OriginateCommand{})
+		Originate(context.Background(), ariTestCommand())
 	if err == nil || !result.Uncertain || result.Outcome != "ambiguous" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -100,7 +107,7 @@ func TestConservativeARIEventMapping(t *testing.T) {
 	if got := destroyedOutcome(event, "RINGING"); got != "ambiguous" {
 		t.Fatalf("unknown mapped to %q", got)
 	}
-	if got := destroyedOutcome(event, "ANSWERED"); got != "completed" {
+	if got := destroyedOutcome(event, "ANSWERED"); got != "ambiguous" {
 		t.Fatalf("answered mapped to %q", got)
 	}
 	event.Type, event.Digit = "ChannelDtmfReceived", "9"
