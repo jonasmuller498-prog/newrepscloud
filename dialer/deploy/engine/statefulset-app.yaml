@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dialer-engine
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          imagePullPolicy: IfNotPresent
+          command: [/app-bin/dialer]
+          envFrom:
+            - configMapRef:
+                name: dialer-runtime
+            - secretRef:
+                name: dialer-app-secrets
+            - secretRef:
+                name: dialer-ari-secrets
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: dialer-postgres
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dialer-postgres
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: dialer-postgres
+                  key: POSTGRES_DB
+          ports:
+            - name: api
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 200m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            periodSeconds: 3
+            failureThreshold: 40
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: api
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 2
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: app-bin
+              mountPath: /app-bin
+              readOnly: true
+            - name: media
+              mountPath: /media
+            - name: tmp
+              mountPath: /tmp

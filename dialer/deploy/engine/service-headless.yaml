@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dialer-engine-headless
+  labels:
+    app.kubernetes.io/name: dialer-engine
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    app.kubernetes.io/name: dialer-engine
+  ports:
+    - name: api
+      port: 8080
+      targetPort: api
+      protocol: TCP

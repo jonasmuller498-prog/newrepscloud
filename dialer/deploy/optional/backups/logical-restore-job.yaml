@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-logical-restore
+  labels:
+    app.kubernetes.io/name: dialer-postgres
+    app.kubernetes.io/component: postgres-maintenance
+spec:
+  suspend: true
+  backoffLimit: 0
+  activeDeadlineSeconds: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dialer-postgres
+        app.kubernetes.io/component: postgres-maintenance
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: pg-restore
+          image: postgres:17-bookworm@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
+          imagePullPolicy: IfNotPresent
+          command: [sh, -ec]
+          args:
+            - |
+              test "$ALLOW_DESTRUCTIVE_RESTORE" = "I_UNDERSTAND_DATA_WILL_BE_REPLACED"
+              case "$RESTORE_FILE" in
+                REQUIRED_*|"") echo "set RESTORE_FILE" >&2; exit 64 ;;
+                *[!A-Za-z0-9._-]*) echo "invalid RESTORE_FILE" >&2; exit 64 ;;
+              esac
+              test -f "/backups/$RESTORE_FILE"
+              pg_restore --clean --if-exists --exit-on-error \
+                --single-transaction --dbname="$PGDATABASE" "/backups/$RESTORE_FILE"
+          env:
+            - name: ALLOW_DESTRUCTIVE_RESTORE
+              value: "false"
+            - name: RESTORE_FILE
+              value: REQUIRED_BACKUP_FILENAME
+            - name: PGHOST
+              value: postgres
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: dialer-postgres
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dialer-postgres
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: dialer-postgres
+                  key: POSTGRES_DB
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: backups
+              mountPath: /backups
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: backups
+          persistentVolumeClaim:
+            claimName: postgres-backups
+        - name: tmp
+          emptyDir: {}

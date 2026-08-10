@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-voxbone-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dialer-engine
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.0.2.1/32
+      ports:
+        - port: 31100
+          protocol: UDP
+    - from:
+        - ipBlock:
+            cidr: 198.51.100.0/24
+      ports:
+        - port: 31500
+          endPort: 31699
+          protocol: UDP
