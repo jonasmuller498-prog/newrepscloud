@@ -71,7 +71,8 @@ func (c *ARIClient) Originate(ctx context.Context, cmd OriginateCommand) (Origin
 	body, _ := json.Marshal(map[string]any{"variables": map[string]string{
 		"DIALER_ATTEMPT_ID": cmd.AttemptID,
 	}})
-	return c.request(ctx, http.MethodPost, "channels", query, body, false)
+	result, requestErr := c.request(ctx, http.MethodPost, "channels", query, body, false)
+	return c.resolveConflict(ctx, result, requestErr, path.Join("channels", cmd.ChannelID))
 }
 
 func (c *ARIClient) Play(
@@ -82,18 +83,7 @@ func (c *ARIClient) Play(
 	query.Set("playbackId", playbackID)
 	resource := path.Join("channels", channelID, "play")
 	result, err := c.request(ctx, http.MethodPost, resource, query, nil, false)
-	if result.StatusCode != http.StatusConflict {
-		return result, err
-	}
-	exists, lookupErr := c.resourceExists(ctx, path.Join("playbacks", playbackID))
-	if lookupErr != nil {
-		return OriginateResult{Outcome: "ambiguous", Uncertain: true}, lookupErr
-	}
-	if exists {
-		result.Accepted, result.Outcome = true, ""
-		return result, nil
-	}
-	return result, err
+	return c.resolveConflict(ctx, result, err, path.Join("playbacks", playbackID))
 }
 
 func (c *ARIClient) Hangup(ctx context.Context, channelID string) (OriginateResult, error) {
@@ -102,6 +92,22 @@ func (c *ARIClient) Hangup(ctx context.Context, channelID string) (OriginateResu
 
 func (c *ARIClient) ChannelExists(ctx context.Context, channelID string) (bool, error) {
 	return c.resourceExists(ctx, path.Join("channels", channelID))
+}
+
+func (c *ARIClient) resolveConflict(ctx context.Context, result OriginateResult,
+	requestErr error, resource string) (OriginateResult, error) {
+	if result.StatusCode != http.StatusConflict {
+		return result, requestErr
+	}
+	exists, lookupErr := c.resourceExists(ctx, resource)
+	if lookupErr != nil {
+		return OriginateResult{Outcome: "ambiguous", Uncertain: true}, lookupErr
+	}
+	if exists {
+		result.Accepted, result.Outcome = true, ""
+		return result, nil
+	}
+	return result, requestErr
 }
 
 func (c *ARIClient) resourceExists(ctx context.Context, resource string) (bool, error) {

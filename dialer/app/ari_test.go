@@ -65,6 +65,28 @@ func TestARIOriginateRequest(t *testing.T) {
 	}
 }
 
+func TestARIOriginateConflictAcceptsExistingChannel(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method == http.MethodPost && r.URL.Path == "/ari/channels" {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/ari/channels/dialer-channel" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := NewARIClient(ariTestConfig(server.URL))
+	result, err := client.Originate(context.Background(), ariTestCommand())
+	if err != nil || !result.Accepted || requests != 2 {
+		t.Fatalf("result=%+v requests=%d err=%v", result, requests, err)
+	}
+}
+
 func TestARIOriginateOutcomeMapping(t *testing.T) {
 	tests := []struct {
 		status    int
