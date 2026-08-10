@@ -42,7 +42,11 @@ class DeploymentTests(unittest.TestCase):
                 "runtime.env": read("base/config/app.env")
                 .replace("REQUIRED_40_CHARACTER_GIT_COMMIT_SHA", "1" * 40)
                 .replace("REQUIRED_64_CHARACTER_SHA256", "2" * 64),
-                "network.env": read("base/config/network.env.example"),
+                "network.env": (
+                    "INGRESS_NAMESPACE=edge-ingress\n"
+                    "TRUNK_SIGNAL_CIDR=203.0.113.10/32\n"
+                    "TRUNK_MEDIA_CIDR=203.0.113.0/24\n"
+                ),
                 "postgres.env": "POSTGRES_USER=dialer\nPOSTGRES_PASSWORD=" + "3" * 64 + "\nPOSTGRES_DB=dialer\n",
                 "app.env": "DIALER_API_TOKEN=" + "4" * 64 + "\nDIALER_ORIGIN_TOKEN=" + "5" * 64 + "\n",
                 "ari.env": "ARI_USERNAME=dialer_app\nARI_PASSWORD=" + "6" * 64 + "\n",
@@ -61,6 +65,9 @@ class DeploymentTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertGreaterEqual(result.stdout.count("edge-ingress"), 2)
+            self.assertGreaterEqual(result.stdout.count("203.0.113.10/32"), 3)
+            self.assertGreaterEqual(result.stdout.count("203.0.113.0/24"), 3)
             backup_result = subprocess.run(
                 ["kubectl", "kustomize", str(copy / "overlays/production-backups")],
                 text=True,
@@ -68,6 +75,12 @@ class DeploymentTests(unittest.TestCase):
             )
             self.assertEqual(backup_result.returncode, 0, backup_result.stderr)
             self.assertIn("name: postgres-logical-restore", backup_result.stdout)
+            postgres_refs = re.findall(
+                r"secretKeyRef:\n\s+key: POSTGRES_[A-Z_]+\n\s+name: (\S+)",
+                backup_result.stdout,
+            )
+            self.assertTrue(postgres_refs)
+            self.assertTrue(all(name.startswith("dialer-postgres-") for name in postgres_refs))
 
     def test_nodeports_are_exact_and_nonconflicting(self):
         manifests = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("*.yaml"))
