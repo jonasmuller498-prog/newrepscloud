@@ -15,11 +15,18 @@ networks are TEST-NET ranges, the trunk is absent, `DIALING_ENABLED=false`, and
 
 - HTTPS: `dialer.playground.obvious.tech`, via the `nginx` Ingress class and
   `letsencrypt-prod` ClusterIssuer.
-- SIP: `5.196.90.231:31100/UDP`, NodePort with source IP preservation.
-- RTP: `5.196.90.231:32300-32499/UDP`, split across ten NodePort Services.
+- Production SIP: `5.196.90.231:31100/UDP`, NodePort with source IP
+  preservation.
+- Production RTP: `5.196.90.231:32300-32499/UDP`, split across ten NodePort
+  Services.
 - ARI is loopback-only at `127.0.0.1:8088`; PostgreSQL is namespace-private.
 - The API Service targets only `8080`. Metrics use a separate private Service
   on `9090` and are not routed by the Ingress.
+
+The `staging-disabled` overlay retains HTTPS, PostgreSQL, the app, private
+metrics, shared media, and loopback ARI. It deletes every SIP/RTP Service and
+carrier ingress rule, removes carrier UDP egress, and replaces the Asterisk
+PJSIP template with one containing no transport or endpoint.
 
 The repository's listed SIP B2BUA uses `32061` and `32200-32219`; this
 deployment's `31100` and `32300-32499` ranges do not overlap. Still run the
@@ -59,6 +66,32 @@ cd dialer/deploy
 Static validation renders every package and overlay with ephemeral nonproduction
 inputs, runs `kubeconform`, verifies `go build .`, enforces the app/deploy
 contract and file limits, and never calls `kubectl apply`.
+
+## Deploy carrier-free staging
+
+Choose a reviewed source commit from the configured public repository, then run:
+
+```bash
+cd dialer/deploy
+./scripts/init-staging-inputs.sh <exact-40-character-source-commit>
+./validate.sh --staging-disabled
+kubectl diff -k overlays/staging-disabled
+kubectl apply -k overlays/staging-disabled
+kubectl -n voice-dialer rollout status statefulset/postgres --timeout=10m
+kubectl -n voice-dialer rollout status statefulset/dialer-engine --timeout=15m
+curl --fail --show-error https://dialer.playground.obvious.tech/health/ready
+```
+
+The helper is safe for automation when the commit is passed as its sole
+argument; with a terminal and no argument it prompts only for that commit. It
+creates separate 256-bit credentials and keys without printing them. The input
+directory ignores `*.env` and has no carrier/network input.
+
+This overlay is permanently disabled-only and can never be patched into a
+dialing deployment. Do not add carrier values, enablement flags, transports, or
+SIP/RTP exposure to it. Use the production overlay later after all carrier,
+backup, compliance, and enablement reviews. See [RUNBOOK.md](RUNBOOK.md) for
+narrow token access and the isolated integration-test database procedure.
 
 ## Create production inputs safely
 

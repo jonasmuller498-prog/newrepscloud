@@ -1,0 +1,93 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: voice-dialer
+resources:
+  - ../../base
+configMapGenerator:
+  - name: dialer-runtime
+    behavior: replace
+    envs:
+      - inputs/runtime.env
+  - name: dialer-network-values
+    behavior: replace
+    literals:
+      - NETWORK_MODE=staging-disabled
+  - name: dialer-safety-status
+    behavior: replace
+    envs:
+      - inputs/safety.env
+  - name: asterisk-config
+    behavior: merge
+    files:
+      - pjsip.conf=asterisk/pjsip.conf
+secretGenerator:
+  - name: dialer-postgres-admin
+    envs:
+      - inputs/postgres-admin.env
+  - name: dialer-postgres-runtime
+    envs:
+      - inputs/postgres-runtime.env
+  - name: dialer-app-secrets
+    envs:
+      - inputs/app.env
+  - name: dialer-ari-secrets
+    envs:
+      - inputs/ari.env
+  - name: dialer-trunk-secrets
+    envs:
+      - inputs/trunk.env
+generatorOptions:
+  immutable: true
+  labels:
+    app.kubernetes.io/part-of: voice-dialer
+replacements:
+  - source:
+      kind: ConfigMap
+      name: dialer-safety-status
+      fieldPath: data.BACKUP_STATUS
+    targets:
+      - select:
+          kind: CronJob
+          name: postgres-logical-backup
+        fieldPaths:
+          - metadata.annotations.[voice-dialer.obvious.tech/backup-status]
+patches:
+  - target:
+      version: v1
+      kind: Service
+      labelSelector: app.kubernetes.io/component in (sip,rtp)
+    patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: carrier-services-disabled
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: allow-carrier-ingress
+    patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata:
+        name: allow-carrier-ingress
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: allow-engine-egress
+    patch: |-
+      - op: remove
+        path: /spec/egress/4
+      - op: remove
+        path: /spec/egress/3
+  - target:
+      group: apps
+      version: v1
+      kind: StatefulSet
+      name: dialer-engine
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/1/ports

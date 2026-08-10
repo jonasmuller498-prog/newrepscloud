@@ -35,7 +35,6 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$")
 SIP_RE = re.compile(r"^sip:(?:[A-Za-z0-9+_.%-]+@)?[A-Za-z0-9.-]+:[0-9]{2,5}$")
 
-
 def fail(message):
     raise ValueError(message)
 
@@ -179,7 +178,6 @@ def check(directory, allow_test):
             fail("production dialing requires an acknowledged external backup destination")
         if not safety["BACKUP_STATUS"].startswith("configured"):
             fail("production dialing requires configured backup status")
-
 
 def main():
     parser = argparse.ArgumentParser()
