@@ -101,6 +101,10 @@ Verify the source commit exists in the public repository, contains the expected
 `dialer/app` root package and committed `go.sum`, builds with `go build .`, and
 has completed code/security review. The init build rejects a branch, tag,
 non-40-character ref, changed module graph, or automatic toolchain download.
+For every Asterisk image or version upgrade, revalidate each required module
+and its dependencies against the exact image, inspect startup logs for module
+or config warnings, and repeat controlled PJSIP/ARI call and playback checks.
+Keep `autoload=no`; a missing required module must continue to fail startup.
 Before first apply, inspect retained claims:
 ```bash
 kubectl -n voice-dialer get pvc
@@ -116,7 +120,6 @@ kubectl apply -k overlays/production
 kubectl -n voice-dialer rollout status statefulset/postgres --timeout=10m
 kubectl -n voice-dialer rollout status statefulset/dialer-engine --timeout=15m
 ```
-
 The first engine start requires public HTTPS egress for source/module fetches.
 Inspect init logs without printing environment values:
 
@@ -131,9 +134,7 @@ The app owns schema migrations and must use an advisory lock so one failed
 restart cannot partially migrate. PostgreSQL shutdown has 90 seconds; Asterisk
 receives `core stop gracefully`; the app must stop scheduling immediately on
 SIGTERM and drain or mark in-flight calls before exiting.
-
 ## 4. Disabled-state checks
-
 ```bash
 kubectl -n voice-dialer get pods,pvc,svc,ingress,pdb,networkpolicy
 kubectl -n voice-dialer exec dialer-engine-0 -c asterisk -- \
@@ -149,7 +150,6 @@ return `401`/`403`, role tokens differ, health uses `/health/live` and
 metrics are inaccessible through the Ingress.
 Confirm the app UID can create, fsync, and remove a test file in
 `/media/ari-journal`; do not remove any existing journal records.
-
 Check `DIALING_ENABLED=false`, `CPS=0`, and concurrency `20` through the
 authenticated status endpoint. The app enforces a hard maximum of 100.
 
@@ -172,9 +172,9 @@ constructs the complete PJSIP endpoint string.
 
 First add the reviewed URI/auth fields and set `DIALER_TRUNK_ENABLED=true` in
 the ignored `trunk.env`. Render/review/apply and verify the one `outbound`
-endpoint uses the exact account target, PCMU, RFC4733, and plain RTP. Caller ID
-is intentionally not hardcoded in PJSIP; the app supplies an authorized value
-per attempt. Scheduler settings remain paused.
+endpoint uses the exact account target, PCMU/PCMA, RFC4733, and plain RTP.
+Caller ID is intentionally not hardcoded in PJSIP; the app supplies an
+authorized value per attempt. Scheduler settings remain paused.
 
 Configure/test external backups and set the destination, status, and
 acknowledgement in `safety.env`. After controlled call, opt-out, capacity, CPS,

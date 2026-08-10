@@ -44,14 +44,25 @@ configMapGenerator:
       - config/safety.env.example
   - name: asterisk-config
     files:
+      - asterisk/acl.conf
       - asterisk/asterisk.conf
       - asterisk/ari.conf
+      - asterisk/ccss.conf
+      - asterisk/cdr.conf
+      - asterisk/cel.conf
       - asterisk/extensions.conf
+      - asterisk/features.conf
       - asterisk/http.conf
+      - asterisk/indications.conf
       - asterisk/logger.conf
+      - asterisk/manager.conf
       - asterisk/modules.conf
+      - asterisk/pjproject.conf
       - asterisk/pjsip.conf
       - asterisk/rtp.conf
+      - asterisk/stasis.conf
+      - asterisk/udptl.conf
+      - asterisk/websocket_client.conf
   - name: dialer-build-scripts
     files:
       - scripts/build-app.sh

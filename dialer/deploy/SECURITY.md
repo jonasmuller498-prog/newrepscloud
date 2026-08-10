@@ -22,8 +22,8 @@ accepts inbound campaign traffic.
 ## Asterisk and provider
 
 - ARI HTTP binds only `127.0.0.1:8088`; no Service or Ingress targets it.
-- SIP exposes UDP only. RTP is plain by default, PCMU (`ulaw`) only, with
-  RFC4733 DTMF. The app supplies a reviewed caller ID on every originate.
+- SIP exposes UDP only. RTP is plain by default, with PCMU (`ulaw`) and PCMA
+  (`alaw`) plus RFC4733 DTMF. The app supplies a reviewed caller ID per call.
 - `digest` mode emits outbound auth. `ip` mode emits no auth object. Neither
   mode enables inbound campaign routes or provider registration.
 - The exact assigned URI must be `sip:[account@]sbc:port`; the renderer rejects
@@ -52,6 +52,12 @@ App-to-Asterisk traffic is loopback within one pod and does not traverse a
 NetworkPolicy boundary. PostgreSQL accepts only engine and labeled maintenance
 pods. The optional Prometheus policy opens only TCP 9090 from its selected
 namespace/pods.
+
+Loopback is a pod-level boundary, not a container security boundary. The app
+sidecar is trusted with write-capable ARI credentials and can control channels,
+playback, and the loaded ARI recording surface. Do not add unreviewed sidecars
+or ephemeral containers; restrict pod-exec and Secret-read RBAC. NetworkPolicy
+cannot filter traffic between containers sharing the pod network namespace.
 
 One documented exception is public TCP 443 egress from the engine pod. It is
 required because the mandated init container fetches a public Git commit and Go
@@ -84,8 +90,11 @@ independent; only the runtime URL reaches the app. Encrypt inputs at rest or
 remove them after handing values to the organization's secret delivery system.
 
 Images include tags for review and manifest-list digests for immutability.
-Re-resolve and review digests during planned upgrades. The Go build disables
-CGO, toolchain auto-download, mutable module edits, and credential prompts.
+Re-resolve and review digests during planned upgrades. Every Asterisk upgrade
+must revalidate the exact required module list and dependencies against that
+image, inspect startup logs, and repeat PJSIP/ARI call and playback checks; never
+restore module autoloading. The Go build disables CGO, toolchain auto-download,
+mutable module edits, and credential prompts.
 Grant no service-account token, Linux capability, privilege escalation, or
 root UID. The namespace enforces `baseline` so cert-manager's HTTP-01 solver can
 renew TLS certificates, while auditing and warning at `restricted`; every
