@@ -34,7 +34,9 @@ func (o *Originator) worker(ctx context.Context) {
 			waitContext(ctx, 250*time.Millisecond)
 			continue
 		}
-		item, err := o.store.ClaimOutbox(ctx)
+		claimCtx, claimCancel := context.WithTimeout(ctx, defaultDBTimeout)
+		item, err := o.store.ClaimOutbox(claimCtx)
+		claimCancel()
 		if err != nil {
 			o.log.Error("outbox claim failed", "error", err)
 			waitContext(ctx, 250*time.Millisecond)
@@ -48,18 +50,25 @@ func (o *Originator) worker(ctx context.Context) {
 			_ = o.store.ResetOutbox(ctx, item.ID)
 			continue
 		}
-		command, err := o.store.LoadOriginateCommand(ctx, item.AttemptID)
+		loadCtx, loadCancel := context.WithTimeout(ctx, defaultDBTimeout)
+		command, err := o.store.LoadOriginateCommand(loadCtx, item.AttemptID)
+		loadCancel()
 		if err != nil {
 			if !errors.Is(err, errNotFound) {
-				o.gate.mediaReady.Store(checkMediaDirectory(o.store.config.MediaDir))
+				o.gate.mediaReady.Store(false)
 				o.log.Error("originate prerequisites unavailable", "error", err)
 			}
 			_ = o.store.ResetOutbox(ctx, item.ID)
 			waitContext(ctx, 100*time.Millisecond)
 			continue
 		}
-		result, originateErr := o.client.Originate(ctx, command)
-		if completeErr := o.store.CompleteOriginate(ctx, *item, result); completeErr != nil {
+		callCtx, callCancel := context.WithTimeout(ctx, 15*time.Second)
+		result, originateErr := o.client.Originate(callCtx, command)
+		callCancel()
+		completeCtx, completeCancel := context.WithTimeout(ctx, defaultDBTimeout)
+		completeErr := o.store.CompleteOriginate(completeCtx, *item, result)
+		completeCancel()
+		if completeErr != nil {
 			o.log.Error("originate result persistence failed", "error", completeErr)
 			continue
 		}

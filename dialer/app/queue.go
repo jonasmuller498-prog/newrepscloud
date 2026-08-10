@@ -17,11 +17,11 @@ type QueuedAttempt struct {
 }
 
 type queueCandidate struct {
-	ID, Timezone    string
-	AttemptCount    int
-	WindowStartSecs float64
-	WindowEndSecs   float64
-	DatabaseNow     time.Time
+	ID, RecipientID, Timezone string
+	AttemptCount              int
+	WindowStartSecs           float64
+	WindowEndSecs             float64
+	DatabaseNow               time.Time
 }
 
 func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
@@ -77,10 +77,14 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 	attemptNo := candidate.AttemptCount + 1
 	attemptID := attemptUUID(candidate.ID, attemptNo)
 	channelID := "dialer-" + strings.ReplaceAll(attemptID, "-", "")
-	_, err = tx.Exec(ctx, `INSERT INTO call_attempts
-		(id,campaign_recipient_id,attempt_no,channel_id,slot_no,state)
-		VALUES($1,$2,$3,$4,$5,'CLAIMED')`,
-		attemptID, candidate.ID, attemptNo, channelID, slot)
+	tag, err := tx.Exec(ctx, `INSERT INTO call_attempts
+		(id,campaign_recipient_id,recipient_id,attempt_no,channel_id,slot_no,state)
+		VALUES($1,$2,$3,$4,$5,$6,'CLAIMED')
+		ON CONFLICT DO NOTHING`,
+		attemptID, candidate.ID, candidate.RecipientID, attemptNo, channelID, slot)
+	if err == nil && tag.RowsAffected() == 0 {
+		return nil, nil
+	}
 	if err == nil {
 		_, err = tx.Exec(ctx, `UPDATE dialer_slots SET attempt_id=$2,leased_at=now()
 			WHERE slot_no=$1`, slot, attemptID)
@@ -106,7 +110,7 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 
 func claimCandidate(ctx context.Context, tx pgx.Tx) (queueCandidate, error) {
 	var c queueCandidate
-	err := tx.QueryRow(ctx, `SELECT cr.id,cr.timezone,cr.attempt_count,
+	err := tx.QueryRow(ctx, `SELECT cr.id,cr.recipient_id,cr.timezone,cr.attempt_count,
 		EXTRACT(EPOCH FROM c.window_start),EXTRACT(EPOCH FROM c.window_end),clock_timestamp()
 		FROM campaign_recipients cr JOIN campaigns c ON c.id=cr.campaign_id
 		JOIN recipients r ON r.id=cr.recipient_id
@@ -120,8 +124,11 @@ func claimCandidate(ctx context.Context, tx pgx.Tx) (queueCandidate, error) {
 		  AND ce.consent_at<=clock_timestamp()+interval '5 minutes' AND ce.source<>''
 		  AND ci.authorized_at<=clock_timestamp()+interval '5 minutes'
 		  AND NOT EXISTS(SELECT 1 FROM suppressions sp WHERE sp.phone_hash=r.phone_hash)
+		  AND NOT EXISTS(SELECT 1 FROM call_attempts active
+		    WHERE active.recipient_id=cr.recipient_id AND active.state IN
+		    ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED'))
 		ORDER BY cr.next_attempt_at,cr.id FOR UPDATE OF cr SKIP LOCKED LIMIT 1`).
-		Scan(&c.ID, &c.Timezone, &c.AttemptCount, &c.WindowStartSecs,
+		Scan(&c.ID, &c.RecipientID, &c.Timezone, &c.AttemptCount, &c.WindowStartSecs,
 			&c.WindowEndSecs, &c.DatabaseNow)
 	return c, err
 }

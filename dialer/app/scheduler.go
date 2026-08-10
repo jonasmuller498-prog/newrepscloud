@@ -51,7 +51,9 @@ func (s *Scheduler) runAsLeader(ctx context.Context, conn *pgxpool.Conn) {
 			s.wait(ctx, 250*time.Millisecond)
 			continue
 		}
-		attempt, err := s.store.AllocateAttempt(ctx)
+		allocationCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+		attempt, err := s.store.AllocateAttempt(allocationCtx)
+		cancel()
 		if err != nil {
 			s.log.Error("scheduler allocation failed", "error", err)
 			s.wait(ctx, 250*time.Millisecond)

@@ -41,7 +41,7 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	gate := &DependencyGate{}
-	gate.mediaReady.Store(checkMediaDirectory(config.MediaDir))
+	gate.mediaReady.Store(store.MediaReady(startup))
 	metrics := &Metrics{}
 	ari := NewARIClient(config)
 	scheduler := &Scheduler{store, gate, metrics, log}

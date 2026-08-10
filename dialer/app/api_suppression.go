@@ -65,6 +65,10 @@ func (a *API) optOut(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusBadRequest, "invalid_json", "Invalid opt-out payload.")
 		return
 	}
+	if err = decoder.Decode(&struct{}{}); err != io.EOF {
+		writeProblem(w, http.StatusBadRequest, "invalid_json", "Invalid opt-out payload.")
+		return
+	}
 	actor := "internal:hmac"
 	if bearerOK && who.Role == "operator" {
 		actor = who.Actor

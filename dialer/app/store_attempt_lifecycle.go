@@ -72,7 +72,8 @@ func (s *Store) finishAttemptTx(
 		status = "SUCCEEDED"
 	} else if outcome == "ambiguous" {
 		status = "QUARANTINED"
-	} else if retryableOutcome(outcome) && attemptNo < 3 && campaignState != "DRAINING" {
+	} else if retryableOutcome(outcome) && attemptNo < 3 &&
+		(campaignState == "RUNNING" || campaignState == "PAUSED") {
 		status = "QUEUED"
 	}
 	if status == "QUEUED" {
@@ -91,7 +92,12 @@ func (s *Store) UpdateAttemptState(ctx context.Context, attemptID, state string)
 		return errConflict
 	}
 	_, err := s.pool.Exec(ctx, `UPDATE call_attempts SET state=$2,updated_at=now()
-		WHERE id=$1 AND state IN ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED')`,
+		WHERE id=$1 AND (
+		  ($2='RINGING' AND state IN ('CLAIMED','ORIGINATING')) OR
+		  ($2='ANSWERED' AND state IN ('CLAIMED','ORIGINATING','RINGING')) OR
+		  ($2='MESSAGE_STARTED' AND state IN
+		    ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED'))
+		)`,
 		attemptID, state)
 	return err
 }

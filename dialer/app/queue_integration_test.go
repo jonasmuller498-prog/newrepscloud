@@ -38,8 +38,8 @@ func TestConcurrentSlotAllocationAndIdempotency(t *testing.T) {
 	query.Set("search_path", schema)
 	parsed.RawQuery = query.Encode()
 	config := Config{
-		DatabaseURL: parsed.String(), MediaDir: t.TempDir(), MaxConcurrency: 1,
-		CPS: 100, WindowStart: 8 * time.Hour, WindowEnd: 21 * time.Hour,
+		DatabaseURL: parsed.String(), MediaDir: t.TempDir(), MaxConcurrency: 2,
+		CPS: 100000, WindowStart: 8 * time.Hour, WindowEnd: 21 * time.Hour,
 		HMACKey: []byte(strings.Repeat("k", 32)),
 	}
 	protector, _ := NewProtector(config.HMACKey)
@@ -75,20 +75,20 @@ func TestConcurrentSlotAllocationAndIdempotency(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	if got := accepted.Load(); got != 1 {
-		t.Fatalf("allocated %d attempts with one fixed slot", got)
+	if got := accepted.Load(); got != 2 {
+		t.Fatalf("allocated %d attempts with two fixed slots", got)
 	}
 	var attempts, occupied, maxPerRecipient int
 	err = store.pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM call_attempts),
 		(SELECT count(*) FROM dialer_slots WHERE attempt_id IS NOT NULL),
 		(SELECT COALESCE(max(n),0) FROM (SELECT count(*) n FROM call_attempts
-		  GROUP BY campaign_recipient_id) grouped)`).
+		  GROUP BY recipient_id) grouped)`).
 		Scan(&attempts, &occupied, &maxPerRecipient)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attempts != 1 || occupied != 1 || maxPerRecipient != 1 {
+	if attempts != 2 || occupied != 2 || maxPerRecipient != 1 {
 		t.Fatalf("attempts=%d occupied=%d per_recipient=%d", attempts, occupied, maxPerRecipient)
 	}
 	var attemptID, campaignRecipientID string
@@ -98,7 +98,7 @@ func TestConcurrentSlotAllocationAndIdempotency(t *testing.T) {
 	if err != nil || attemptID != attemptUUID(campaignRecipientID, attemptNo) {
 		t.Fatalf("non-deterministic attempt id %s: %v", attemptID, err)
 	}
-	if campaignID == "" || len(recipientIDs) != 2 {
+	if campaignID == "" || len(recipientIDs) != 3 {
 		t.Fatal("invalid queue fixture")
 	}
 }
@@ -133,6 +133,7 @@ func seedQueue(t *testing.T, ctx context.Context, store *Store) (string, []strin
 		t.Fatal(err)
 	}
 	var ids []string
+	var firstRecipient, firstConsent string
 	for i := range 2 {
 		recipientID, _ := newUUID()
 		consentID, _ := newUUID()
@@ -153,7 +154,32 @@ func seedQueue(t *testing.T, ctx context.Context, store *Store) (string, []strin
 		if err != nil {
 			t.Fatal(err)
 		}
+		if i == 0 {
+			firstRecipient, firstConsent = recipientID, consentID
+		}
 		ids = append(ids, crID)
 	}
+	secondCampaign, _ := newUUID()
+	secondApproval, _ := newUUID()
+	sharedCR, _ := newUUID()
+	_, err = store.pool.Exec(ctx, `INSERT INTO campaigns
+		(id,name,state,message_asset_id,caller_id_id,dnc_attested_at,
+		window_start,window_end,created_by) VALUES($1,'shared','RUNNING',$2,$3,now(),
+		'00:00','23:59:59','test')`, secondCampaign, assetID, callerID)
+	if err == nil {
+		_, err = store.pool.Exec(ctx, `INSERT INTO campaign_approvals
+			(id,campaign_id,message_asset_id,caller_id_id,approver)
+			VALUES($1,$2,$3,$4,'test')`,
+			secondApproval, secondCampaign, assetID, callerID)
+	}
+	if err == nil {
+		_, err = store.pool.Exec(ctx, `INSERT INTO campaign_recipients
+			(id,campaign_id,recipient_id,consent_evidence_id,timezone)
+			VALUES($1,$2,$3,$4,'UTC')`, sharedCR, secondCampaign, firstRecipient, firstConsent)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids = append(ids, sharedCR)
 	return campaignID, ids
 }
