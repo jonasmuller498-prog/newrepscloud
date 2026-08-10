@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dialer-engine
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: render-asterisk-config
+          image: golang:1.25-bookworm@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf
+          imagePullPolicy: IfNotPresent
+          command: [go, run, /scripts/render-config.go]
+          env:
+            - name: HOME
+              value: /tmp
+            - name: GOTOOLCHAIN
+              value: local
+            - name: GOCACHE
+              value: /tmp/go-cache
+            - name: GOTELEMETRY
+              value: "off"
+          envFrom:
+            - secretRef:
+                name: dialer-app-secrets
+            - secretRef:
+                name: dialer-ari-secrets
+            - secretRef:
+                name: dialer-trunk-secrets
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config-templates
+              mountPath: /templates
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: rendered-config
+              mountPath: /rendered
+            - name: tmp
+              mountPath: /tmp
+        - name: build-dialer-app
+          image: golang:1.25-bookworm@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /scripts/build-app.sh]
+          env:
+            - name: HOME
+              value: /workspace
+            - name: GOCACHE
+              value: /tmp/go-cache
+            - name: GOTELEMETRY
+              value: "off"
+          envFrom:
+            - configMapRef:
+                name: dialer-runtime
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: app-bin
+              mountPath: /app-bin
+            - name: source
+              mountPath: /workspace
+            - name: tmp
+              mountPath: /tmp

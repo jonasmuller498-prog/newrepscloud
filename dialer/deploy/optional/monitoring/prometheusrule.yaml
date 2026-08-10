@@ -1,0 +1,66 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: dialer
+  labels:
+    app.kubernetes.io/name: dialer-engine
+spec:
+  groups:
+    - name: voice-dialer.availability
+      rules:
+        - alert: DialerEnginePodDown
+          expr: kube_statefulset_status_replicas_ready{namespace="voice-dialer",statefulset="dialer-engine"} < 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Dialer engine is unavailable
+            description: The engine StatefulSet has had no ready replica for five minutes.
+        - alert: DialerSchedulerPaused
+          expr: max(dialer_scheduler_enabled{namespace="voice-dialer"}) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Dialer scheduler is paused
+            description: DIALING_ENABLED is false or the scheduler reports itself paused.
+        - alert: DialerSlotMismatch
+          expr: max(dialer_slot_mismatch{namespace="voice-dialer"}) != 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Dialer concurrency slots are inconsistent
+            description: Active, reserved, and configured slots do not reconcile.
+    - name: voice-dialer.delivery
+      rules:
+        - alert: DialerCPSThrottling
+          expr: increase(dialer_cps_throttled_total{namespace="voice-dialer"}[5m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Calls are persistently CPS-throttled
+            description: The scheduler has continuously hit its calls-per-second guard.
+        - alert: DialerHighSIPFailureRate
+          expr: |
+            (
+              sum(rate(dialer_sip_attempts_total{namespace="voice-dialer",result="failed"}[10m]))
+              /
+              clamp_min(sum(rate(dialer_sip_attempts_total{namespace="voice-dialer"}[10m])), 0.001)
+            ) > 0.20
+            and sum(increase(dialer_sip_attempts_total{namespace="voice-dialer"}[10m])) >= 20
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: SIP failure ratio exceeds 20 percent
+            description: At least twenty attempts occurred and more than 20 percent failed.
+        - alert: DialerOptOutPersistenceFailure
+          expr: increase(dialer_opt_out_persistence_failures_total{namespace="voice-dialer"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: A DTMF opt-out was not persisted
+            description: Stop dialing until the failed opt-out has been reconciled.

@@ -1,0 +1,119 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: voice-dialer
+resources:
+  - namespace.yaml
+  - postgres/service.yaml
+  - postgres/statefulset.yaml
+  - postgres/pdb.yaml
+  - postgres/backup-pvc.yaml
+  - postgres/backup-cronjob.yaml
+  - engine/service-headless.yaml
+  - engine/service-app.yaml
+  - engine/service-metrics.yaml
+  - engine/media-pvc.yaml
+  - engine/statefulset.yaml
+  - engine/pdb.yaml
+  - engine/service-sip.yaml
+  - engine/rtp-31500-31519.yaml
+  - engine/rtp-31520-31539.yaml
+  - engine/rtp-31540-31559.yaml
+  - engine/rtp-31560-31579.yaml
+  - engine/rtp-31580-31599.yaml
+  - engine/rtp-31600-31619.yaml
+  - engine/rtp-31620-31639.yaml
+  - engine/rtp-31640-31659.yaml
+  - engine/rtp-31660-31679.yaml
+  - engine/rtp-31680-31699.yaml
+  - ingress.yaml
+  - network/default-deny.yaml
+  - network/app-ingress.yaml
+  - network/voxbone-ingress.yaml
+  - network/engine-egress.yaml
+  - network/database.yaml
+configMapGenerator:
+  - name: dialer-runtime
+    envs:
+      - config/app.env
+  - name: dialer-network-values
+    envs:
+      - config/network.env.example
+  - name: asterisk-config
+    files:
+      - asterisk/asterisk.conf
+      - asterisk/ari.conf
+      - asterisk/extensions.conf
+      - asterisk/http.conf
+      - asterisk/logger.conf
+      - asterisk/modules.conf
+      - asterisk/pjsip.conf
+      - asterisk/rtp.conf
+  - name: dialer-build-scripts
+    files:
+      - scripts/build-app.sh
+      - scripts/render-config.go
+secretGenerator:
+  - name: dialer-postgres
+    envs:
+      - secrets/postgres.env.example
+  - name: dialer-app-secrets
+    envs:
+      - secrets/app.env.example
+  - name: dialer-ari-secrets
+    envs:
+      - secrets/ari.env.example
+  - name: dialer-trunk-secrets
+    envs:
+      - secrets/trunk.env.example
+generatorOptions:
+  immutable: true
+  labels:
+    app.kubernetes.io/part-of: voice-dialer
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: voice-dialer
+patches:
+  - path: engine/statefulset-init.yaml
+  - path: engine/statefulset-app.yaml
+  - path: engine/statefulset-asterisk.yaml
+replacements:
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.INGRESS_NAMESPACE
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-app-ingress
+        fieldPaths:
+          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.TRUNK_SIGNAL_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-voxbone-ingress
+        fieldPaths:
+          - spec.ingress.0.from.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: allow-engine-egress
+        fieldPaths:
+          - spec.egress.3.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.TRUNK_MEDIA_CIDR
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-voxbone-ingress
+        fieldPaths:
+          - spec.ingress.1.from.0.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: allow-engine-egress
+        fieldPaths:
+          - spec.egress.4.to.0.ipBlock.cidr
