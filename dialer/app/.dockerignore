@@ -1,0 +1,6 @@
+.git
+.env
+*.log
+coverage.out
+dialer
+tmp/
