@@ -1,0 +1,76 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	if err := run(log); err != nil {
+		log.Error("dialer stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger) error {
+	config, err := LoadConfig()
+	if err != nil {
+		return err
+	}
+	protector, err := NewProtector(config.HMACKey)
+	if err != nil {
+		return err
+	}
+	root, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	startup, cancel := context.WithTimeout(root, 30*time.Second)
+	defer cancel()
+	store, err := openStore(startup, config, protector)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if err = runMigrations(startup, store.pool); err != nil {
+		return err
+	}
+	gate := &DependencyGate{}
+	gate.mediaReady.Store(checkMediaDirectory(config.MediaDir))
+	metrics := &Metrics{}
+	ari := NewARIClient(config)
+	scheduler := &Scheduler{store, gate, metrics, log}
+	originator := &Originator{store, ari, gate, metrics, log}
+	consumer := &ARIConsumer{store, ari, gate, metrics, log}
+	reconciler := &Reconciler{store, gate, log}
+	go scheduler.Run(root)
+	go originator.Run(root)
+	go consumer.Run(root)
+	go reconciler.Run(root)
+	server := &http.Server{
+		Addr: config.Addr, Handler: NewAPI(store, config, gate, metrics),
+		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
+		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
+		MaxHeaderBytes: 32 << 10,
+	}
+	result := make(chan error, 1)
+	go func() {
+		log.Info("HTTP server started", "address", config.Addr)
+		result <- server.ListenAndServe()
+	}()
+	select {
+	case <-root.Done():
+	case err = <-result:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	}
+	shutdown, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+	return server.Shutdown(shutdown)
+}
