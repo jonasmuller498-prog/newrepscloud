@@ -59,7 +59,7 @@ def one(items, kind, name=None, prefix=None):
 def secret_data(secret):
     try:
         return {
-            key: base64.b64decode(value, validate=True).decode("utf-8")
+            key: base64.b64decode("".join(value.split()), validate=True).decode("utf-8")
             for key, value in secret.get("data", {}).items()
         }
     except (binascii.Error, UnicodeDecodeError) as error:
