@@ -46,12 +46,14 @@ running database is crash-consistent, not a substitute for a logical dump.
 For stronger consistency, pause dialing/writes and request a PostgreSQL
 checkpoint before snapshotting.
 
-The optional package is not referenced by the base. Applying it immediately
-requests a snapshot and a new `postgres-snapshot-restore` PVC, so preview it:
+The optional package is not referenced by the base. The production-backups
+overlay composes it with the production overlay so generated Secret references
+stay consistent. Applying it immediately requests a snapshot and a new
+`postgres-snapshot-restore` PVC, so preview it:
 
 ```bash
-kubectl diff -k optional/backups
-kubectl apply -k optional/backups
+kubectl diff -k overlays/production-backups
+kubectl apply -k overlays/production-backups
 kubectl -n voice-dialer get volumesnapshot postgres-manual-snapshot -w
 ```
 
