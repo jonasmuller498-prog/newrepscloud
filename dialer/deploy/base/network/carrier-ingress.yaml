@@ -12,6 +12,8 @@ spec:
     - from:
         - ipBlock:
             cidr: 192.0.2.1/32
+        - ipBlock:
+            cidr: 192.0.2.2/32
       ports:
         - port: 31100
           protocol: UDP

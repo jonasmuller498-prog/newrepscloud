@@ -18,9 +18,10 @@ read -r -p "Reviewed 40-character source commit SHA: " source_ref
   exit 64
 }
 
-read -r -p "Exact carrier signaling CIDR (/32 preferred): " signal_cidr
+read -r -p "Primary carrier signaling CIDR (/32 preferred): " signal_cidr_primary
+read -r -p "Secondary carrier signaling CIDR (/32 preferred): " signal_cidr_secondary
 read -r -p "Exact carrier media CIDR: " media_cidr
-for cidr in "$signal_cidr" "$media_cidr"; do
+for cidr in "$signal_cidr_primary" "$signal_cidr_secondary" "$media_cidr"; do
   python3 - "$cidr" <<'PY'
 import ipaddress, sys
 network = ipaddress.ip_network(sys.argv[1], strict=True)
@@ -67,7 +68,8 @@ printf '%s\n' \
   'ARI_APP=voice-dialer' 'ARI_ENDPOINT=outbound' \
   'DIALER_SOURCE_REPOSITORY=https://github.com/jonasmuller498-prog/newrepscloud.git' \
   "DIALER_SOURCE_REF=${source_ref,,}" >"$out/runtime.env"
-printf '%s\n' "TRUNK_SIGNAL_CIDR=$signal_cidr" \
+printf '%s\n' "TRUNK_SIGNAL_CIDR_PRIMARY=$signal_cidr_primary" \
+  "TRUNK_SIGNAL_CIDR_SECONDARY=$signal_cidr_secondary" \
   "TRUNK_MEDIA_CIDR=$media_cidr" >"$out/network.env"
 printf '%s\n' "BACKUP_STATUS=$backup_status" \
   "BACKUP_DESTINATION=${backup_destination:-UNCONFIGURED}" \

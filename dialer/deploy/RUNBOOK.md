@@ -1,5 +1,5 @@
 # Deployment and operations runbook
-All commands are operator procedures; these assets have not been deployed.
+All commands are operator procedures; production has not been commissioned.
 Use a change window and retain `DIALING_ENABLED=false`, `CPS=0`, and
 `DIALER_TRUNK_ENABLED=false` through all initial checks.
 ## Carrier-free staging-disabled rollout
@@ -56,8 +56,8 @@ carrier CIDRs, trunk fields, PJSIP transports, or public SIP/RTP Services; use
 the production overlay later and complete all production gates.
 ## 1. Resolve inputs and RKE2 preflight
 Do not start production rendering until owners provide all of:
-- exact outbound SBC URI/port and explicit digest or IP authentication;
-- carrier signaling and media CIDRs;
+- both assigned outbound SBC URIs/ports and explicit digest or IP authentication;
+- both signaling `/32`s and the exact carrier media range;
 - approved CPS;
 - authorized US E.164 caller IDs and STIR/SHAKEN treatment;
 - final TTS/audio, campaign consent, calling-window, DNC, and legal inputs; and
@@ -171,9 +171,10 @@ constructs the complete PJSIP endpoint string.
 
 ## 6. Two-stage enablement
 
-First add the reviewed URI/auth fields and set `DIALER_TRUNK_ENABLED=true` in
-the ignored `trunk.env`. Render/review/apply and verify the one `outbound`
-endpoint uses the exact account target, PCMU/PCMA, RFC4733, and plain RTP.
+First add both reviewed URI/auth fields and set `DIALER_TRUNK_ENABLED=true` in
+the ignored `trunk.env`. Render/review/apply and verify the `outbound` endpoint
+uses ordered, qualified primary/secondary AORs, PCMU/PCMA, RFC4733, and plain
+RTP. Prove secondary selection by making only the primary unreachable.
 Caller ID is intentionally not hardcoded in PJSIP; the app supplies an
 authorized value per attempt. Scheduler settings remain paused.
 
@@ -193,7 +194,6 @@ after the pod rolls. Preserve logs and database evidence. Roll back application
 code only to another reviewed 40-character commit and keep schema compatibility
 in mind. Preserve `/media/ari-journal`; pending or malformed records are
 operator-action evidence and must not be discarded to recover readiness.
-
-Both singleton PDBs use `maxUnavailable: 1`, so they do not deadlock voluntary
-maintenance. Maintenance still causes downtime. StatefulSet ordered replacement
-prevents two engine pods from contending for the RWO media claim.
+Both singleton PDBs use `minAvailable: 1`, so voluntary eviction is blocked
+until the operator plans downtime. StatefulSet ordered replacement prevents
+two engine pods from contending for the RWO media claim.

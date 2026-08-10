@@ -40,6 +40,7 @@ class ProductionOverlayTests(unittest.TestCase):
                 self.assertIn("name: dialer-app-secrets-", rendered)
                 self.assertIn("voice-dialer.obvious.tech/backup-status: unconfigured-suspended", rendered)
                 self.assertGreaterEqual(rendered.count("192.0.2.10/32"), 2)
+                self.assertGreaterEqual(rendered.count("192.0.2.11/32"), 2)
                 self.assertGreaterEqual(rendered.count("198.51.100.0/24"), 2)
                 if overlay == "production-backups":
                     self.assertIn("name: postgres-logical-restore", rendered)
@@ -84,7 +85,8 @@ class ProductionOverlayTests(unittest.TestCase):
             (inputs / "trunk.env").write_text(
                 "DIALER_TRUNK_ENABLED=true\n"
                 "DIALER_TRUNK_AUTH_MODE=ip\n"
-                "DIALER_TRUNK_SIP_URI=sip:account@192.0.2.20:5060\n"
+                "DIALER_TRUNK_SIP_URI_PRIMARY=sip:account@192.0.2.20:5060\n"
+                "DIALER_TRUNK_SIP_URI_SECONDARY=sip:account@192.0.2.21:5060\n"
             )
             result = subprocess.run(
                 ["python3", str(copy / "scripts/check-production-inputs.py"),
@@ -92,6 +94,15 @@ class ProductionOverlayTests(unittest.TestCase):
                 text=True, capture_output=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            trunk = inputs / "trunk.env"
+            trunk.write_text(trunk.read_text().replace("192.0.2.21", "192.0.2.20"))
+            duplicate = subprocess.run(
+                ["python3", str(copy / "scripts/check-production-inputs.py"),
+                 "--allow-test-net", str(inputs)],
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(duplicate.returncode, 0)
+            self.assertIn("SBC URIs must be distinct", duplicate.stderr)
 
     def test_ari_endpoint_must_be_plain_outbound_name(self):
         with tempfile.TemporaryDirectory() as temp:

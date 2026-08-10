@@ -39,10 +39,18 @@ func trunkBlock(enabled bool) string {
 	if mode != "digest" && mode != "ip" {
 		panic("DIALER_TRUNK_AUTH_MODE must be exactly digest or ip")
 	}
-	uri := required("DIALER_TRUNK_SIP_URI")
-	if !uriRE.MatchString(uri) || strings.Contains(uri, ".invalid:") ||
-		strings.Contains(uri, ".example:") || strings.Contains(uri, "localhost:") {
-		panic("DIALER_TRUNK_SIP_URI must be an exact sip:[user@]host:port target")
+	uris := []string{
+		required("DIALER_TRUNK_SIP_URI_PRIMARY"),
+		required("DIALER_TRUNK_SIP_URI_SECONDARY"),
+	}
+	if uris[0] == uris[1] {
+		panic("outbound SBC URIs must be distinct")
+	}
+	for _, uri := range uris {
+		if !uriRE.MatchString(uri) || strings.Contains(uri, ".invalid:") ||
+			strings.Contains(uri, ".example:") || strings.Contains(uri, "localhost:") {
+			panic("outbound SBC URIs must be exact sip:[user@]host:port targets")
+		}
 	}
 	authLine, authSection := "", ""
 	if mode == "digest" {
@@ -59,11 +67,18 @@ password=%s
 realm=%s
 `, user, password, realm)
 	}
-	return fmt.Sprintf(`[outbound-aor]
+	return fmt.Sprintf(`[outbound-primary]
 type=aor
 contact=%s
-qualify_frequency=60
 qualify_timeout=3.0
+qualify_frequency=30
+max_contacts=1
+
+[outbound-secondary]
+type=aor
+contact=%s
+qualify_timeout=3.0
+qualify_frequency=30
 max_contacts=1
 
 [outbound]
@@ -72,7 +87,7 @@ transport=transport-udp
 context=reject-inbound
 disallow=all
 allow=ulaw,alaw
-aors=outbound-aor
+aors=outbound-primary,outbound-secondary
 %sdtmf_mode=rfc4733
 direct_media=no
 force_rport=yes
@@ -83,7 +98,7 @@ send_pai=yes
 send_rpid=no
 trust_id_outbound=yes
 timers=yes
-%s`, configValue(uri), authLine, authSection)
+%s`, configValue(uris[0]), configValue(uris[1]), authLine, authSection)
 }
 
 func main() {

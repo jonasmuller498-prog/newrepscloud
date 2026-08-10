@@ -26,10 +26,13 @@ accepts inbound campaign traffic.
   (`alaw`) plus RFC4733 DTMF. The app supplies a reviewed caller ID per call.
 - `digest` mode emits outbound auth. `ip` mode emits no auth object. Neither
   mode enables inbound campaign routes or provider registration.
-- The exact assigned URI must be `sip:[account@]sbc:port`; the renderer rejects
-  `.invalid`, empty, and placeholder targets when the trunk is enabled.
-- Set signaling and media CIDRs to provider-published values. Prefer a `/32`
-  for a single SBC. Do not infer an SBC from a brand-level hostname.
+- Both exact assigned URIs must be `sip:[account@]sbc:port`; the renderer
+  rejects duplicate, `.invalid`, empty, and placeholder targets.
+- Set both signaling `/32`s and the media CIDR to account-specific provider
+  values. Do not infer SBCs from a brand-level hostname.
+- Asterisk qualifies two ordered AORs every 30 seconds. This covers a primary
+  SBC that is marked unreachable; it does not claim transparent retry after an
+  explicit SIP rejection. Verify both cases during the controlled pilot.
 
 The app and Asterisk run as UID/GID 1000 with pod `fsGroup: 1000`. The app
 writes the Longhorn media PVC at `/media`; Asterisk mounts the same claim

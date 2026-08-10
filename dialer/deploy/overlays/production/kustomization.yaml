@@ -40,7 +40,7 @@ replacements:
   - source:
       kind: ConfigMap
       name: dialer-network-values
-      fieldPath: data.TRUNK_SIGNAL_CIDR
+      fieldPath: data.TRUNK_SIGNAL_CIDR_PRIMARY
     targets:
       - select:
           kind: NetworkPolicy
@@ -52,6 +52,21 @@ replacements:
           name: allow-engine-egress
         fieldPaths:
           - spec.egress.3.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: dialer-network-values
+      fieldPath: data.TRUNK_SIGNAL_CIDR_SECONDARY
+    targets:
+      - select:
+          kind: NetworkPolicy
+          name: allow-carrier-ingress
+        fieldPaths:
+          - spec.ingress.0.from.1.ipBlock.cidr
+      - select:
+          kind: NetworkPolicy
+          name: allow-engine-egress
+        fieldPaths:
+          - spec.egress.3.to.1.ipBlock.cidr
   - source:
       kind: ConfigMap
       name: dialer-network-values

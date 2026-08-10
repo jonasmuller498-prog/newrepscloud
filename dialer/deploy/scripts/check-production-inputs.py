@@ -14,7 +14,7 @@ FILES = {
         "ARI_URL", "ARI_APP", "ARI_ENDPOINT",
         "DIALER_SOURCE_REPOSITORY", "DIALER_SOURCE_REF",
     },
-    "network.env": {"TRUNK_SIGNAL_CIDR", "TRUNK_MEDIA_CIDR"},
+    "network.env": {"TRUNK_SIGNAL_CIDR_PRIMARY", "TRUNK_SIGNAL_CIDR_SECONDARY", "TRUNK_MEDIA_CIDR"},
     "safety.env": {"BACKUP_STATUS", "BACKUP_DESTINATION", "BACKUP_ACKNOWLEDGED"},
     "postgres-admin.env": {"POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"},
     "postgres-runtime.env": {"DB_USER", "DB_PASSWORD", "DB_NAME", "DATABASE_URL"},
@@ -25,7 +25,8 @@ FILES = {
     "ari.env": {"ARI_USER", "ARI_PASSWORD"},
 }
 TRUNK_KEYS = {
-    "DIALER_TRUNK_ENABLED", "DIALER_TRUNK_AUTH_MODE", "DIALER_TRUNK_SIP_URI",
+    "DIALER_TRUNK_ENABLED", "DIALER_TRUNK_AUTH_MODE",
+    "DIALER_TRUNK_SIP_URI_PRIMARY", "DIALER_TRUNK_SIP_URI_SECONDARY",
     "DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM",
 }
 KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -37,7 +38,6 @@ SIP_RE = re.compile(r"^sip:(?:[A-Za-z0-9+_.%-]+@)?[A-Za-z0-9.-]+:[0-9]{2,5}$")
 
 def fail(message):
     raise ValueError(message)
-
 
 def load(path):
     if not path.is_file() or path.is_symlink():
@@ -61,11 +61,9 @@ def load(path):
         values[key] = value
     return values
 
-
 def exact(values, expected, filename):
     if set(values) != expected:
         fail(f"{filename} keys differ: expected {sorted(expected)}, got {sorted(values)}")
-
 
 def public_cidr(value, allow_test):
     network = ipaddress.ip_network(value, strict=True)
@@ -73,7 +71,6 @@ def public_cidr(value, allow_test):
         fail("carrier CIDRs must be IPv4")
     if not allow_test and not network.is_global:
         fail("carrier CIDRs must be canonical public networks")
-
 
 def check_database(admin, runtime):
     if admin["POSTGRES_USER"] != "postgres":
@@ -96,7 +93,6 @@ def check_database(admin, runtime):
     if url.path != "/" + runtime["DB_NAME"] or url.query != "sslmode=disable":
         fail("DATABASE_URL database or sslmode is invalid")
 
-
 def check_trunk(values):
     if values.get("DIALER_TRUNK_ENABLED") not in {"true", "false"}:
         fail("DIALER_TRUNK_ENABLED must be true or false")
@@ -104,15 +100,18 @@ def check_trunk(values):
         fail("trunk.env contains unsupported keys")
     if values["DIALER_TRUNK_ENABLED"] == "false":
         return
-    for key in ("DIALER_TRUNK_AUTH_MODE", "DIALER_TRUNK_SIP_URI"):
+    for key in ("DIALER_TRUNK_AUTH_MODE", "DIALER_TRUNK_SIP_URI_PRIMARY",
+                "DIALER_TRUNK_SIP_URI_SECONDARY"):
         if not values.get(key):
             fail(f"{key} is required when the trunk is enabled")
     if values["DIALER_TRUNK_AUTH_MODE"] not in {"digest", "ip"}:
         fail("trunk auth mode must be digest or ip")
-    uri = values["DIALER_TRUNK_SIP_URI"]
+    uris = (values["DIALER_TRUNK_SIP_URI_PRIMARY"], values["DIALER_TRUNK_SIP_URI_SECONDARY"])
+    if uris[0] == uris[1]:
+        fail("outbound SBC URIs must be distinct")
     blocked = r"(?:\.(?:invalid|example|test|localhost)|@localhost|sip:localhost)(?::|$)"
-    if not SIP_RE.fullmatch(uri) or re.search(blocked, uri):
-        fail("trunk SIP URI must be exact sip:[account@]host:port")
+    if any(not SIP_RE.fullmatch(uri) or re.search(blocked, uri) for uri in uris):
+        fail("trunk SIP URIs must be exact sip:[account@]host:port targets")
     if values["DIALER_TRUNK_AUTH_MODE"] == "digest":
         for key in ("DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM"):
             if not values.get(key):
@@ -151,6 +150,8 @@ def check(directory, allow_test):
         fail("DIALER_SOURCE_REF looks like a placeholder")
     for value in network.values():
         public_cidr(value, allow_test)
+    if network["TRUNK_SIGNAL_CIDR_PRIMARY"] == network["TRUNK_SIGNAL_CIDR_SECONDARY"]:
+        fail("carrier signaling CIDRs must be distinct")
     app, ari = data["app.env"], data["ari.env"]
     if any(not HEX64_RE.fullmatch(value) for value in app.values()):
         fail("application secrets must be independent 64-character hex values")

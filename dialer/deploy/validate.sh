@@ -87,7 +87,8 @@ if [[ -n "$(gofmt -d "$root/base/scripts/render-config.go")" ]]; then
   gofmt -d "$root/base/scripts/render-config.go"
   exit 1
 fi
-go test "$root/base/scripts/render-config.go"
+go test "$root/base/scripts/render-config.go" \
+  "$root/base/scripts/render-config_test.go"
 echo "PASS: helper scripts parse and renderer compiles"
 
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \

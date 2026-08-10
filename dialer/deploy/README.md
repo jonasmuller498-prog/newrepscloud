@@ -113,9 +113,13 @@ directory ignores all `*.env` files. Do not use `--from-literal` with secrets
 on a shared shell because command arguments can be observable.
 
 The helper deliberately creates only `DIALER_TRUNK_ENABLED=false`; it never
-guesses an SBC, account, auth mode, or caller ID. Add exact trunk values to the
-ignored input only after provider review. Caller ID is supplied per attempt and
-must be an app-authorized US E.164 identity.
+guesses the carrier's redundant SBC pair, account, auth mode, or caller ID. Add
+both assigned SBCs only after provider review. Caller ID is supplied per
+attempt and must be an app-authorized US E.164 identity.
+Production renders ordered primary and secondary AORs with 30-second OPTIONS
+qualification, so Asterisk selects the secondary only after the primary is
+marked unreachable. The commissioning drill must also test explicit SIP
+failure responses; transport reachability alone does not prove call failover.
 
 ## Required reviews before deployment
 

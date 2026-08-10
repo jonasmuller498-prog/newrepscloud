@@ -146,6 +146,12 @@ class AsteriskHardeningTests(unittest.TestCase):
     def test_renderer_allows_only_pcmu_and_pcma(self):
         body = read("base/scripts/render-config.go")
         self.assertEqual(re.findall(r"(?m)^allow=([a-z0-9,]+)$", body), ["ulaw,alaw"])
+        self.assertIn('required("DIALER_TRUNK_SIP_URI_PRIMARY")', body)
+        self.assertIn('required("DIALER_TRUNK_SIP_URI_SECONDARY")', body)
+        self.assertIn("[outbound-primary]", body)
+        self.assertIn("[outbound-secondary]", body)
+        self.assertIn("aors=outbound-primary,outbound-secondary", body)
+        self.assertEqual(body.count("max_contacts=1"), 2)
 
 
 if __name__ == "__main__":
