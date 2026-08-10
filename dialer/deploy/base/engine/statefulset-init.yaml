@@ -42,6 +42,8 @@ spec:
               value: /tmp/go-cache
             - name: GOTELEMETRY
               value: "off"
+            - name: GOMAXPROCS
+              value: "1"
           envFrom:
             - secretRef:
                 name: dialer-app-secrets
@@ -52,10 +54,10 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 64Mi
+              memory: 128Mi
             limits:
               cpu: 500m
-              memory: 256Mi
+              memory: 512Mi
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
