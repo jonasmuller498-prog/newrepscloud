@@ -51,18 +51,18 @@ spec:
             - name: PGUSER
               valueFrom:
                 secretKeyRef:
-                  name: dialer-postgres
-                  key: POSTGRES_USER
+                  name: dialer-postgres-runtime
+                  key: DB_USER
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: dialer-postgres
-                  key: POSTGRES_PASSWORD
+                  name: dialer-postgres-runtime
+                  key: DB_PASSWORD
             - name: PGDATABASE
               valueFrom:
                 secretKeyRef:
-                  name: dialer-postgres
-                  key: POSTGRES_DB
+                  name: dialer-postgres-runtime
+                  key: DB_NAME
           resources:
             requests:
               cpu: 100m

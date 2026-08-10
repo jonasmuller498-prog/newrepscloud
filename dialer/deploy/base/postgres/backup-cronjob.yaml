@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: postgres-logical-backup
+  annotations:
+    voice-dialer.obvious.tech/backup-status: unconfigured-suspended
   labels:
     app.kubernetes.io/name: dialer-postgres
     app.kubernetes.io/component: postgres-maintenance
@@ -47,6 +49,9 @@ spec:
                   pg_dump --format=custom --compress=9 --file="$tmp"
                   mv "$tmp" "$out"
                   find /backups -type f -name 'dialer-*.dump' -mtime +14 -delete
+              envFrom:
+                - configMapRef:
+                    name: dialer-safety-status
               env:
                 - name: PGHOST
                   value: postgres
@@ -55,18 +60,18 @@ spec:
                 - name: PGUSER
                   valueFrom:
                     secretKeyRef:
-                      name: dialer-postgres
-                      key: POSTGRES_USER
+                      name: dialer-postgres-runtime
+                      key: DB_USER
                 - name: PGPASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: dialer-postgres
-                      key: POSTGRES_PASSWORD
+                      name: dialer-postgres-runtime
+                      key: DB_PASSWORD
                 - name: PGDATABASE
                   valueFrom:
                     secretKeyRef:
-                      name: dialer-postgres
-                      key: POSTGRES_DB
+                      name: dialer-postgres-runtime
+                      key: DB_NAME
               resources:
                 requests:
                   cpu: 100m

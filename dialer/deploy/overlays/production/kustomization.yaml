@@ -12,34 +12,31 @@ configMapGenerator:
     behavior: replace
     envs:
       - inputs/network.env
-secretGenerator:
-  - name: dialer-postgres
+  - name: dialer-safety-status
     behavior: replace
     envs:
-      - inputs/postgres.env
+      - inputs/safety.env
+secretGenerator:
+  - name: dialer-postgres-admin
+    envs:
+      - inputs/postgres-admin.env
+  - name: dialer-postgres-runtime
+    envs:
+      - inputs/postgres-runtime.env
   - name: dialer-app-secrets
-    behavior: replace
     envs:
       - inputs/app.env
   - name: dialer-ari-secrets
-    behavior: replace
     envs:
       - inputs/ari.env
   - name: dialer-trunk-secrets
-    behavior: replace
     envs:
       - inputs/trunk.env
+generatorOptions:
+  immutable: true
+  labels:
+    app.kubernetes.io/part-of: voice-dialer
 replacements:
-  - source:
-      kind: ConfigMap
-      name: dialer-network-values
-      fieldPath: data.INGRESS_NAMESPACE
-    targets:
-      - select:
-          kind: NetworkPolicy
-          name: allow-app-ingress
-        fieldPaths:
-          - spec.ingress.0.from.0.namespaceSelector.matchLabels.kubernetes\.io/metadata\.name
   - source:
       kind: ConfigMap
       name: dialer-network-values
@@ -47,7 +44,7 @@ replacements:
     targets:
       - select:
           kind: NetworkPolicy
-          name: allow-voxbone-ingress
+          name: allow-carrier-ingress
         fieldPaths:
           - spec.ingress.0.from.0.ipBlock.cidr
       - select:
@@ -62,7 +59,7 @@ replacements:
     targets:
       - select:
           kind: NetworkPolicy
-          name: allow-voxbone-ingress
+          name: allow-carrier-ingress
         fieldPaths:
           - spec.ingress.1.from.0.ipBlock.cidr
       - select:
@@ -70,3 +67,13 @@ replacements:
           name: allow-engine-egress
         fieldPaths:
           - spec.egress.4.to.0.ipBlock.cidr
+  - source:
+      kind: ConfigMap
+      name: dialer-safety-status
+      fieldPath: data.BACKUP_STATUS
+    targets:
+      - select:
+          kind: CronJob
+          name: postgres-logical-backup
+        fieldPaths:
+          - metadata.annotations.[voice-dialer.obvious.tech/backup-status]

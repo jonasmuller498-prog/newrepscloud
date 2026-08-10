@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-voxbone-ingress
+  name: allow-carrier-ingress
 spec:
   podSelector:
     matchLabels:
@@ -19,6 +19,6 @@ spec:
         - ipBlock:
             cidr: 198.51.100.0/24
       ports:
-        - port: 31500
-          endPort: 31699
+        - port: 32300
+          endPort: 32499
           protocol: UDP

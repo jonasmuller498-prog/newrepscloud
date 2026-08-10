@@ -15,20 +15,20 @@ resources:
   - engine/statefulset.yaml
   - engine/pdb.yaml
   - engine/service-sip.yaml
-  - engine/rtp-31500-31519.yaml
-  - engine/rtp-31520-31539.yaml
-  - engine/rtp-31540-31559.yaml
-  - engine/rtp-31560-31579.yaml
-  - engine/rtp-31580-31599.yaml
-  - engine/rtp-31600-31619.yaml
-  - engine/rtp-31620-31639.yaml
-  - engine/rtp-31640-31659.yaml
-  - engine/rtp-31660-31679.yaml
-  - engine/rtp-31680-31699.yaml
+  - engine/rtp-32300-32319.yaml
+  - engine/rtp-32320-32339.yaml
+  - engine/rtp-32340-32359.yaml
+  - engine/rtp-32360-32379.yaml
+  - engine/rtp-32380-32399.yaml
+  - engine/rtp-32400-32419.yaml
+  - engine/rtp-32420-32439.yaml
+  - engine/rtp-32440-32459.yaml
+  - engine/rtp-32460-32479.yaml
+  - engine/rtp-32480-32499.yaml
   - ingress.yaml
   - network/default-deny.yaml
   - network/app-ingress.yaml
-  - network/voxbone-ingress.yaml
+  - network/carrier-ingress.yaml
   - network/engine-egress.yaml
   - network/database.yaml
 configMapGenerator:
@@ -38,6 +38,9 @@ configMapGenerator:
   - name: dialer-network-values
     envs:
       - config/network.env.example
+  - name: dialer-safety-status
+    envs:
+      - config/safety.env.example
   - name: asterisk-config
     files:
       - asterisk/asterisk.conf
@@ -52,19 +55,9 @@ configMapGenerator:
     files:
       - scripts/build-app.sh
       - scripts/render-config.go
-secretGenerator:
-  - name: dialer-postgres
-    envs:
-      - secrets/postgres.env.example
-  - name: dialer-app-secrets
-    envs:
-      - secrets/app.env.example
-  - name: dialer-ari-secrets
-    envs:
-      - secrets/ari.env.example
-  - name: dialer-trunk-secrets
-    envs:
-      - secrets/trunk.env.example
+  - name: postgres-init
+    files:
+      - postgres/init-runtime.sh
 generatorOptions:
   immutable: true
   labels:
