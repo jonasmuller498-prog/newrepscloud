@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - 01-sip-b2bua-namespace.yaml
+  - 02-sip-b2bua-pjsip-config.yaml
+  - 03-sip-b2bua-core-config.yaml
+  - 04-sip-b2bua-deployment.yaml
+  - 05-sip-b2bua-service.yaml

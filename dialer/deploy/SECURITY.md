@@ -1,0 +1,120 @@
+# Security model
+
+## Fail-closed controls
+
+The placeholder base is intentionally non-operational: it generates no Secrets,
+so neither PostgreSQL nor the engine can start. Production rendering requires
+eight ignored mode-`0600` input files. Validation rejects missing, malformed, or
+placeholder values and a non-commit source ref. Carrier endpoints are not emitted
+unless `DIALER_TRUNK_ENABLED=true`; dialing independently defaults false with zero
+CPS.
+
+The app validates each destination and caller ID as `+1` plus ten digits,
+enforces concurrency/CPS, and originates a controlled Local channel through
+loopback ARI. Asterisk routes it sequentially across the assigned SBC pair; ARI
+then plays `sound:campaigns/<sha>` and handles DTMF/lifecycle events. Asterisk has
+no generic PSTN context, recording, or AMD.
+
+Provider endpoints use a context that rejects unsolicited calls. The internal
+dialer context accepts only E.164 Local-channel targets, and no identify or
+registration section accepts inbound campaign traffic.
+
+## Asterisk and provider
+
+- ARI HTTP binds only `127.0.0.1:8088`; no Service or Ingress targets it.
+- `DIALER_TRUNK_TRANSPORT=udp` is mandatory. Media must explicitly select
+  `none` or `sdes`; PCMU/PCMA and RFC4733 remain fixed. TLS is not implemented.
+  Do not enable a TLS/SRTP account, and use UDP/SDES only when the provider's
+  assigned profile explicitly requires it. The app supplies reviewed caller ID.
+- `digest` mode emits outbound auth. `ip` mode emits no auth object. Neither
+  mode enables inbound campaign routes or provider registration.
+- Both exact assigned URIs must be `sip:[account@]IPv4:port`; the renderer
+  rejects duplicate, mismatched, empty, and non-IP targets.
+- Set each signaling `/32` to the IPv4 in its paired URI and set the media CIDR
+  to the account-specific provider range. Do not infer SBCs from a brand-level
+  hostname.
+- The two `/32`s model the assigned outbound termination pair, not the separate
+  inbound-origination source list. More signaling peers or media ranges require
+  a manifest/model change before enablement; never widen a CIDR as a shortcut.
+- Asterisk qualifies both SBCs every 30 seconds and accepts only `2xx` OPTIONS.
+  The dialplan retries the secondary only for an unreachable primary or explicit
+  SIP `429`, `480`, or `5xx`; ambiguous `408` and permanent failures are terminal.
+  It never forks duplicate calls. Verify every response class in pilot.
+
+The app and Asterisk run as UID/GID 1000 with pod `fsGroup: 1000`. The app
+writes the Longhorn media PVC at `/media`; Asterisk mounts the same claim
+read-only at `/var/lib/asterisk/sounds/campaigns`. A new WAV is staged under a
+unique temporary name, validated, hashed, fsynced, set to `0640`, and atomically
+renamed to `<sha>.wav`. Never overwrite an in-use inode.
+
+## NetworkPolicy boundaries
+
+`default-deny-all` selects every pod for ingress and egress. Explicit policies
+permit only:
+
+- only `kube-system` RKE2 ingress controller pods to app TCP 8080;
+- configured provider signaling/media CIDRs to SIP/RTP;
+- engine pod to PostgreSQL TCP 5432 and provider SIP/RTP;
+- maintenance jobs to PostgreSQL; and
+- cluster DNS where name resolution is required.
+
+App-to-Asterisk traffic is loopback within one pod and does not traverse a
+NetworkPolicy boundary. PostgreSQL accepts only engine and labeled maintenance
+pods. The optional Prometheus policy opens only TCP 9090 from its selected
+namespace/pods.
+
+The bundled ARI connection is loopback HTTP and PostgreSQL uses
+`sslmode=disable` inside that restricted namespace. Routing either dependency
+outside these trust boundaries requires TLS plus a validator/config change.
+
+Loopback is a pod-level boundary, not a container security boundary. The app
+sidecar is trusted with write-capable ARI credentials and can control channels,
+playback, and the loaded ARI recording surface. Do not add unreviewed sidecars
+or ephemeral containers; restrict pod-exec and Secret-read RBAC. NetworkPolicy
+cannot filter traffic between containers sharing the pod network namespace.
+
+One documented exception is public TCP 443 egress from the engine pod. It is
+required because the mandated init container fetches a public Git commit and Go
+modules, while standard RKE2 NetworkPolicy cannot select FQDNs or containers
+inside one pod. Private/link-local CIDRs are excluded. Consequently the running
+app also has public HTTPS egress. If that is unacceptable, install an approved
+egress proxy or an FQDN-aware CNI policy and restrict GitHub/module hosts; the
+init-container build topology cannot be made container-specific with standard
+NetworkPolicy.
+
+Before rendering production, verify the exact selectors:
+
+```bash
+kubectl get ns --show-labels
+kubectl -n kube-system get pods \
+  -l app.kubernetes.io/name=rke2-ingress-nginx,app.kubernetes.io/component=controller \
+  --show-labels
+kubectl -n kube-system get pods -l k8s-app=kube-dns --show-labels
+```
+
+If live labels differ, stop and review a selector patch. NodePort source CIDR
+filtering depends on the installed CNI honoring NetworkPolicy for host-routed
+traffic; retain upstream firewalls for defense in depth.
+
+## Secret and supply-chain handling
+
+No Secret is generated by the base. Production creates hashed, immutable
+Secrets from ignored files. PostgreSQL superuser and runtime credentials are
+independent; only the runtime URL reaches the app. Encrypt inputs at rest or
+remove them after handing values to the organization's secret delivery system.
+
+Images include tags for review and manifest-list digests for immutability.
+Re-resolve and review digests during planned upgrades. Every Asterisk upgrade
+must revalidate the exact required module list and dependencies against that
+image, inspect startup logs, and repeat PJSIP/ARI call and playback checks; never
+restore module autoloading. The Go build disables CGO, toolchain auto-download,
+mutable module edits, and credential prompts.
+Grant no service-account token, Linux capability, privilege escalation, or
+root UID. The namespace enforces `baseline` so cert-manager's HTTP-01 solver can
+renew TLS certificates, while auditing and warning at `restricted`; every
+dialer-owned workload still declares restricted-compatible security contexts.
+
+Production validation refuses `DIALING_ENABLED=true` unless CPS is positive,
+the exact trunk is enabled, public carrier CIDRs are supplied, and an external
+backup destination is explicitly acknowledged. Caller-ID authorization,
+STIR/SHAKEN, final audio/TTS, consent, DNC, and legal review remain human gates.

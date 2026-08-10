@@ -1,0 +1,50 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dialer-postgres
+      app.kubernetes.io/component: database
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dialer-engine
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: postgres-maintenance
+      ports:
+        - {port: 5432, protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-maintenance-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres-maintenance
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dialer-postgres
+              app.kubernetes.io/component: database
+      ports:
+        - {port: 5432, protocol: TCP}

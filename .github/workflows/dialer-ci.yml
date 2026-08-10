@@ -1,0 +1,95 @@
+name: Dialer CI
+
+on:
+  pull_request:
+    paths:
+      - dialer/**
+      - .github/workflows/dialer-ci.yml
+  push:
+    branches: [main]
+    paths:
+      - dialer/**
+      - .github/workflows/dialer-ci.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dialer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Application
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_DB: dialer_ci
+          POSTGRES_PASSWORD: ci-only-not-secret
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dialer_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: dialer/app/go.mod
+          cache-dependency-path: dialer/app/go.sum
+      - name: Test
+        working-directory: dialer/app
+        run: go test -count=1 ./...
+      - name: Test race detector
+        working-directory: dialer/app
+        run: go test -race -count=1 ./...
+      - name: Test PostgreSQL lifecycle
+        working-directory: dialer/app
+        env:
+          TEST_DATABASE_URL: postgres://postgres:ci-only-not-secret@127.0.0.1:5432/dialer_ci?sslmode=disable
+        run: go test -tags=integration -count=1 ./...
+      - name: Vet and build
+        working-directory: dialer/app
+        run: |
+          go vet ./...
+          go build -trimpath -o /tmp/dialer .
+      - name: Scan Go vulnerabilities
+        working-directory: dialer/app
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  deployment:
+    name: Deployment manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: dialer/app/go.mod
+          cache-dependency-path: dialer/app/go.sum
+      - name: Create Kubernetes validation cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          version: v0.31.0
+          cluster_name: dialer-ci
+          kubectl_version: v1.31.14
+          node_image: kindest/node:v1.31.14@sha256:6f86cf509dbb42767b6e79debc3f2c32e4ee01386f0489b3b2be24b0a55aac2b
+      - name: Install manifest validator
+        run: |
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Validate fail-closed overlays
+        working-directory: dialer/deploy
+        run: ./validate.sh --static

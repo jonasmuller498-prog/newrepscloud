@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-carrier-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: dialer-engine
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.0.2.1/32
+        - ipBlock:
+            cidr: 192.0.2.2/32
+      ports:
+        - port: 31100
+          protocol: UDP
+    - from:
+        - ipBlock:
+            cidr: 198.51.100.0/24
+      ports:
+        - port: 32300
+          endPort: 32499
+          protocol: UDP

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Compliance Dialer Control Plane</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">Outbound voice broadcast</p>
+      <h1>Compliance control plane</h1>
+    </div>
+    <button id="refresh" class="secondary">Refresh status</button>
+  </header>
+  <main>
+    <section class="warning">
+      <strong>No campaign launches automatically.</strong>
+      An operator must explicitly start a scheduled, separately approved campaign.
+    </section>
+    <section class="panel">
+      <h2>Operator access</h2>
+      <div class="grid">
+        <label>Operator token<input id="operator-token" type="password" autocomplete="off"></label>
+      </div>
+      <button id="save-tokens">Save for this browser tab</button>
+      <p class="hint"><a href="/approver.html">Open the separate approver console</a>.</p>
+    </section>
+    <section class="panel">
+      <h2>System status</h2>
+      <div id="status" class="status-grid"></div>
+      <div id="blocks" class="blocks" aria-live="polite"></div>
+    </section>
+    <section class="panel">
+      <h2>Create campaign</h2>
+      <form id="campaign-form" class="grid three">
+        <label>Name<input name="name" maxlength="200" required></label>
+        <label>Caller ID ID<input name="caller_id_id" placeholder="UUID"></label>
+        <label>DNC attested at<input name="dnc_attested_at" type="datetime-local" required></label>
+        <button>Create draft</button>
+      </form>
+    </section>
+    <section class="panel">
+      <h2>Campaign preparation</h2>
+      <div class="grid three">
+        <label>Campaign<select id="campaign-select"></select></label>
+        <label>Recipient CSV<input id="csv-file" type="file" accept=".csv,text/csv"></label>
+        <button id="upload-csv">Upload recipients</button>
+        <label>PCM WAV<input id="wav-file" type="file" accept=".wav,audio/wav"></label>
+        <button id="upload-wav">Upload audio</button>
+      </div>
+      <p class="hint">CSV columns: phone_e164, timezone, consent_at, consent_source.</p>
+    </section>
+    <section class="panel">
+      <h2>Caller IDs</h2>
+      <form id="caller-form" class="grid three">
+        <label>E.164 caller ID<input name="phone_e164" placeholder="+14155550100" required></label>
+        <label>Authorization reference<input name="authorization_reference" required></label>
+        <label>Authorized at<input name="authorized_at" type="datetime-local" required></label>
+        <button>Register caller ID</button>
+      </form>
+      <div id="caller-ids" class="list"></div>
+    </section>
+    <section class="panel">
+      <h2>Campaign controls</h2>
+      <div class="controls">
+        <button data-action="validate">Submit validation</button>
+        <input id="schedule-at" type="datetime-local" aria-label="Scheduled time">
+        <button data-action="schedule">Schedule</button>
+        <button data-action="start" class="danger">Start calls</button>
+        <button data-action="pause" class="secondary">Pause</button>
+        <button data-action="cancel" class="secondary">Cancel</button>
+      </div>
+      <div id="campaigns" class="list"></div>
+    </section>
+    <section class="panel">
+      <h2>Suppressions / opt-outs</h2>
+      <form id="suppression-form" class="grid three">
+        <label>Phone E.164<input name="phone_e164" required></label>
+        <label>Reason<input name="reason" value="manual_request" required></label>
+        <label>Source<input name="source" value="admin_ui" required></label>
+        <button>Suppress immediately</button>
+      </form>
+      <div id="suppressions" class="list"></div>
+    </section>
+    <section class="panel">
+      <h2>Recent attempts</h2>
+      <div id="attempts" class="list"></div>
+    </section>
+    <p id="notice" role="status" aria-live="polite"></p>
+  </main>
+  <script src="/api.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

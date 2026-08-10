@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: asterisk-core-config
+  namespace: sip-b2bua
+  labels:
+    app.kubernetes.io/name: asterisk-b2bua
+data:
+  extensions.conf: |
+    [general]
+    static=yes
+    writeprotect=yes
+    clearglobalvars=yes
+
+    [from-voxbone]
+    exten => +18335167239,1,NoOp(Accepted configured Voxbone DID)
+    same => n,Set(GROUP()=voxbone-inbound)
+    same => n,GotoIf($[${GROUP_COUNT(voxbone-inbound)} > 4]?limit)
+    same => n,Dial(PJSIP/101@ivr,60)
+    same => n,NoOp(IVR result DIALSTATUS=${DIALSTATUS} HANGUPCAUSE=${HANGUPCAUSE})
+    same => n,Hangup()
+    same => n(limit),NoOp(Concurrent call limit exceeded)
+    same => n,Hangup(34)
+
+    exten => 18335167239,1,Goto(+18335167239,1)
+
+    exten => _.,1,NoOp(Rejected unauthorized destination)
+    same => n,Hangup(21)
+
+    [from-ivr]
+    exten => _.,1,NoOp(Rejected call initiated by IVR)
+    same => n,Hangup(21)
+
+  rtp.conf: |
+    [general]
+    rtpstart=32200
+    rtpend=32219
+    strictrtp=yes
+    icesupport=no
+
+  logger.conf: |
+    [general]
+    dateformat=%F %T
+
+    [logfiles]
+    console => notice,warning,error,verbose,security
+
+  modules.conf: |
+    [modules]
+    autoload=yes
+    noload => chan_sip.so
+    noload => res_ari.so
+    noload => res_http_websocket.so
+    noload => res_pjsip_transport_websocket.so

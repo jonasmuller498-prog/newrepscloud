@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dialer-engine
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: prepare-shared-storage
+          image: golang:1.26.5-bookworm@sha256:6c5605ab3a9a9fb3c4eafe5b3d63cdbf3881caf113262b67862547b54a9db599
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - umask 0027; mkdir -p /media/ari-journal; chmod 0750 /media/ari-journal
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: media
+              mountPath: /media
+        - name: render-asterisk-config
+          image: golang:1.26.5-bookworm@sha256:6c5605ab3a9a9fb3c4eafe5b3d63cdbf3881caf113262b67862547b54a9db599
+          imagePullPolicy: IfNotPresent
+          command: [go, run, /scripts/render-config.go]
+          env:
+            - name: HOME
+              value: /tmp
+            - name: GOTOOLCHAIN
+              value: local
+            - name: GOCACHE
+              value: /tmp/go-cache
+            - name: GOMODCACHE
+              value: /tmp/go-mod
+            - name: GOPATH
+              value: /tmp/go
+            - name: GOTELEMETRY
+              value: "off"
+            - name: GOMAXPROCS
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: dialer-app-secrets
+            - secretRef:
+                name: dialer-ari-secrets
+            - secretRef:
+                name: dialer-trunk-secrets
+            - configMapRef:
+                name: dialer-network-values
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config-templates
+              mountPath: /templates
+              readOnly: true
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: rendered-config
+              mountPath: /rendered
+            - name: tmp
+              mountPath: /tmp
+        - name: build-dialer-app
+          image: golang:1.26.5-bookworm@sha256:6c5605ab3a9a9fb3c4eafe5b3d63cdbf3881caf113262b67862547b54a9db599
+          imagePullPolicy: IfNotPresent
+          command: [/bin/bash, /scripts/build-app.sh]
+          env:
+            - name: HOME
+              value: /workspace
+            - name: GOCACHE
+              value: /tmp/go-cache
+            - name: GOMODCACHE
+              value: /tmp/go-mod
+            - name: GOPATH
+              value: /tmp/go
+            - name: GOTELEMETRY
+              value: "off"
+          envFrom:
+            - configMapRef:
+                name: dialer-runtime
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: app-bin
+              mountPath: /app-bin
+            - name: source
+              mountPath: /workspace
+            - name: tmp
+              mountPath: /tmp

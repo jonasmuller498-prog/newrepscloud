@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: asterisk-b2bua
+  namespace: sip-b2bua
+  labels:
+    app.kubernetes.io/name: asterisk-b2bua
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: asterisk-b2bua
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: asterisk-b2bua
+      annotations:
+        config-revision: "2026-08-09-3"
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: playground
+      terminationGracePeriodSeconds: 75
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: asterisk
+          image: andrius/asterisk:22.10.1_debian-trixie
+          imagePullPolicy: IfNotPresent
+          command:
+            - /usr/sbin/asterisk
+          args:
+            - -f
+            - -vvv
+            - -n
+          ports:
+            - name: sip-udp
+              containerPort: 32061
+              protocol: UDP
+            - name: sip-tcp
+              containerPort: 32061
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            exec:
+              command:
+                - /usr/sbin/asterisk
+                - -rx
+                - core show uptime
+            failureThreshold: 30
+            periodSeconds: 2
+            timeoutSeconds: 2
+          readinessProbe:
+            exec:
+              command:
+                - /usr/sbin/asterisk
+                - -rx
+                - core show uptime
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - /usr/sbin/asterisk
+                - -rx
+                - core show uptime
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /usr/sbin/asterisk
+                  - -rx
+                  - core stop gracefully
+          volumeMounts:
+            - name: pjsip-config
+              mountPath: /etc/asterisk/pjsip.conf
+              subPath: pjsip.conf
+              readOnly: true
+            - name: core-config
+              mountPath: /etc/asterisk/extensions.conf
+              subPath: extensions.conf
+              readOnly: true
+            - name: core-config
+              mountPath: /etc/asterisk/rtp.conf
+              subPath: rtp.conf
+              readOnly: true
+            - name: core-config
+              mountPath: /etc/asterisk/logger.conf
+              subPath: logger.conf
+              readOnly: true
+            - name: core-config
+              mountPath: /etc/asterisk/modules.conf
+              subPath: modules.conf
+              readOnly: true
+      volumes:
+        - name: pjsip-config
+          configMap:
+            name: asterisk-pjsip-config
+        - name: core-config
+          configMap:
+            name: asterisk-core-config

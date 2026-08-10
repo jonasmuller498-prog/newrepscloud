@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: dialer-engine
+spec:
+  template:
+    spec:
+      containers:
+        - name: asterisk
+          imagePullPolicy: IfNotPresent
+          command: [/usr/sbin/asterisk]
+          args: [-f, -n, -C, /config/asterisk.conf, -vvv]
+          ports:
+            - name: sip-udp
+              containerPort: 31100
+              protocol: UDP
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          startupProbe:
+            exec:
+              command: [/usr/sbin/asterisk, -C, /config/asterisk.conf, -rx, core show uptime]
+            periodSeconds: 3
+            failureThreshold: 40
+            timeoutSeconds: 2
+          readinessProbe:
+            exec:
+              command: [/usr/sbin/asterisk, -C, /config/asterisk.conf, -rx, core show uptime]
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 2
+          livenessProbe:
+            exec:
+              command: [/usr/sbin/asterisk, -C, /config/asterisk.conf, -rx, core show uptime]
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 2
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: rendered-config
+              mountPath: /config
+              readOnly: true
+            - name: media
+              mountPath: /var/lib/asterisk/sounds/campaigns
+              readOnly: true
+            - name: asterisk-run
+              mountPath: /var/run/asterisk
+            - name: asterisk-state
+              mountPath: /var/lib/asterisk-state
+            - name: tmp
+              mountPath: /tmp

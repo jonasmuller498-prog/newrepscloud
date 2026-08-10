@@ -1,0 +1,141 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func ariTestConfig(serverURL string) Config {
+	return Config{
+		ARIURL: serverURL, ARIApp: "broadcast", ARIUser: "ari-user",
+		ARIPassword: "ari-pass", ARIDialContext: "dialer-outbound",
+	}
+}
+
+func ariTestCommand() OriginateCommand {
+	return OriginateCommand{
+		AttemptID: "attempt-id", ChannelID: "dialer-channel", Phone: "+14155552671",
+		CallerID: "+14155550100", MediaSHA: "asset",
+	}
+}
+
+func TestARIOriginateRequest(t *testing.T) {
+	var checked bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ari/channels" {
+			t.Errorf("unexpected ARI path %q", r.URL.Path)
+		}
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "ari-user" || password != "ari-pass" {
+			t.Error("missing ARI basic authentication")
+		}
+		query := r.URL.Query()
+		if query.Get("endpoint") != "Local/+14155552671@dialer-outbound/n" ||
+			query.Get("callerId") != "+14155550100" ||
+			query.Get("channelId") != "dialer-channel" ||
+			query.Get("app") != "broadcast" || query.Get("appArgs") != "attempt-id" ||
+			query.Get("timeout") != "90" {
+			t.Errorf("unexpected query: %v", query)
+		}
+		for _, forbidden := range []string{"context", "extension", "priority"} {
+			if query.Has(forbidden) {
+				t.Errorf("originate mixed Stasis and dialplan parameter %q", forbidden)
+			}
+		}
+		var payload struct {
+			Variables map[string]string `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload.Variables["DIALER_ATTEMPT_ID"] != "attempt-id" {
+			t.Errorf("unexpected variables: %v", payload.Variables)
+		}
+		checked = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := NewARIClient(ariTestConfig(server.URL + "/ari"))
+	result, err := client.Originate(context.Background(), ariTestCommand())
+	if err != nil || !result.Accepted || !checked {
+		t.Fatalf("result=%+v checked=%v err=%v", result, checked, err)
+	}
+}
+
+func TestARIOriginateConflictAcceptsExistingChannel(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method == http.MethodPost && r.URL.Path == "/ari/channels" {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == "/ari/channels/dialer-channel" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := NewARIClient(ariTestConfig(server.URL))
+	result, err := client.Originate(context.Background(), ariTestCommand())
+	if err != nil || !result.Accepted || requests != 2 {
+		t.Fatalf("result=%+v requests=%d err=%v", result, requests, err)
+	}
+}
+
+func TestARIOriginateOutcomeMapping(t *testing.T) {
+	tests := []struct {
+		status    int
+		outcome   string
+		uncertain bool
+	}{
+		{http.StatusForbidden, "forbidden", false},
+		{http.StatusBadRequest, "invalid", false},
+		{http.StatusTooManyRequests, "temporary", false},
+		{http.StatusServiceUnavailable, "temporary", false},
+	}
+	for _, test := range tests {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(test.status)
+		}))
+		client := NewARIClient(ariTestConfig(server.URL))
+		result, err := client.Originate(context.Background(), ariTestCommand())
+		server.Close()
+		if err == nil || result.Outcome != test.outcome || result.Uncertain != test.uncertain {
+			t.Errorf("status %d: result=%+v err=%v", test.status, result, err)
+		}
+	}
+}
+
+func TestARITransportFailureIsAmbiguous(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	url := server.URL
+	server.Close()
+	result, err := NewARIClient(ariTestConfig(url)).
+		Originate(context.Background(), ariTestCommand())
+	if err == nil || !result.Uncertain || result.Outcome != "ambiguous" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestConservativeARIEventMapping(t *testing.T) {
+	event := ARIEvent{Cause: 17}
+	if got := destroyedOutcome(event, "RINGING"); got != "busy" {
+		t.Fatalf("busy mapped to %q", got)
+	}
+	event.Cause = 0
+	if got := destroyedOutcome(event, "RINGING"); got != "ambiguous" {
+		t.Fatalf("unknown mapped to %q", got)
+	}
+	if got := destroyedOutcome(event, "ANSWERED"); got != "ambiguous" {
+		t.Fatalf("answered mapped to %q", got)
+	}
+	event.Type, event.Digit = "ChannelDtmfReceived", "9"
+	if event.Digit != "9" {
+		t.Fatal("DTMF opt-out digit not retained")
+	}
+}
