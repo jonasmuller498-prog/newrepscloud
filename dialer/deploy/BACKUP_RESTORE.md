@@ -3,12 +3,17 @@
 The base creates a Longhorn RWO `postgres-backups` PVC and a logical backup
 CronJob, but the CronJob has `suspend: true`. A second PVC in the same cluster
 is not disaster recovery. Configure and test an external Longhorn backup target
-before treating any snapshot or PVC as durable.
+before treating any PVC as durable. `dialer-safety-status` and the CronJob
+annotation make the current configuration state visible; production dialing
+validation requires an acknowledged external destination.
 
 ## Logical backups
 
 Review database size, retention, free space, and the maintenance NetworkPolicy.
-Then enable only the CronJob:
+The backup uses the non-superuser runtime account. Configure encrypted export
+from the backup PVC or a reviewed Longhorn recurring backup to the acknowledged
+destination. Test restore first, update `safety.env`, then enable only the
+CronJob:
 
 ```bash
 kubectl -n voice-dialer patch cronjob postgres-logical-backup \
@@ -32,30 +37,19 @@ kubectl -n voice-dialer patch cronjob postgres-logical-backup \
 
 ## Longhorn snapshots and backups
 
-First discover the installed CSI snapshot class instead of assuming it:
+No `VolumeSnapshot` or `VolumeSnapshotClass` is shipped here. Snapshot classes
+are cluster-scoped operational inputs and cannot be guessed safely. Discover
+the installed class and Longhorn backup target:
 
 ```bash
 kubectl get volumesnapshotclass
 kubectl -n longhorn-system get settings.longhorn.io backup-target -o yaml
 ```
 
-`optional/backups/volume-snapshot.yaml` uses the common
-`longhorn-snapshot-vsc`; change it locally if the cluster uses another class.
-It snapshots only the new `data-postgres-0` claim. A filesystem snapshot of a
-running database is crash-consistent, not a substitute for a logical dump.
-For stronger consistency, pause dialing/writes and request a PostgreSQL
-checkpoint before snapshotting.
-
-The optional package is not referenced by the base. The production-backups
-overlay composes it with the production overlay so generated Secret references
-stay consistent. Applying it immediately requests a snapshot and a new
-`postgres-snapshot-restore` PVC, so preview it:
-
-```bash
-kubectl diff -k overlays/production-backups
-kubectl apply -k overlays/production-backups
-kubectl -n voice-dialer get volumesnapshot postgres-manual-snapshot -w
-```
+Create any snapshot as a separately reviewed one-use manifest containing the
+exact discovered class. A filesystem snapshot of a running database is only
+crash-consistent. Pause dialing/writes and request a PostgreSQL checkpoint
+first. Never add a guessed default class to this overlay.
 
 Configure a Longhorn recurring backup job for the new PostgreSQL volume through
 the approved cluster process. Do not modify a shared recurring-job resource
@@ -64,7 +58,9 @@ than updating the existing object.
 
 ## Logical restore: paused twice
 
-The optional restore Job defaults to `spec.suspend: true`. Its command also
+`overlays/production-backups` adds only the optional logical restore Job and
+keeps generated runtime Secret references consistent. The Job defaults to
+`spec.suspend: true`. Its command also
 requires the exact confirmation
 `ALLOW_DESTRUCTIVE_RESTORE=I_UNDERSTAND_DATA_WILL_BE_REPLACED` and rejects the
 placeholder filename. Thus an accidental apply cannot restore data.
@@ -85,10 +81,11 @@ Never commit the edited destructive Job.
 
 ## Snapshot-volume restore
 
-`postgres-snapshot-restore` is a separate PVC sourced from the snapshot. It is
-not wired into the live StatefulSet, intentionally. Mount it read-only in a
-disposable PostgreSQL recovery pod or a cloned StatefulSet using compatible
-PostgreSQL 17 binaries. Validate data and export a logical dump.
+Create a separate PVC from a reviewed snapshot only after supplying the exact
+live class and snapshot name. Do not wire it into the live StatefulSet. Mount
+it read-only in a disposable PostgreSQL recovery pod or cloned StatefulSet
+using compatible PostgreSQL 17 binaries. Validate data and export a logical
+dump.
 
 Do not patch the live StatefulSet claim name or delete `data-postgres-0` as a
 shortcut. A PVC template cannot safely switch an existing ordinal. Use a new

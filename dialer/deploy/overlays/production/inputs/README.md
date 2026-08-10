@@ -1,7 +1,7 @@
 # Production inputs
 
 This directory is intentionally empty except for this file. Every `*.env` file
-is ignored by Git. Create the six files described in the top-level runbook,
+is ignored by Git. Create the eight files described in the top-level runbook,
 keep them mode `0600`, and render the production overlay only from a trusted
 workstation.
 
@@ -9,7 +9,9 @@ Required files:
 
 - `runtime.env`
 - `network.env`
-- `postgres.env`
+- `safety.env`
+- `postgres-admin.env`
+- `postgres-runtime.env`
 - `app.env`
 - `ari.env`
 - `trunk.env`

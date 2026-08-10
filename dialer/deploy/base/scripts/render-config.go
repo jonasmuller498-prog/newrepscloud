@@ -99,9 +99,9 @@ func main() {
 		panic("ARI_PASSWORD must be a generated 64-character hex value")
 	}
 	replacements := map[string]string{
-		"@@ARI_USERNAME@@":  ariUser,
-		"@@ARI_PASSWORD@@":  ariPassword,
-		"@@TRUNK_BLOCK@@":   trunkBlock(enabledText == "true"),
+		"@@ARI_USER@@":     ariUser,
+		"@@ARI_PASSWORD@@": ariPassword,
+		"@@TRUNK_BLOCK@@":  trunkBlock(enabledText == "true"),
 	}
 	if err := os.MkdirAll("/rendered", 0750); err != nil {
 		panic(err)
