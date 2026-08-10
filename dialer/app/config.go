@@ -1,9 +1,9 @@
 package main
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -12,37 +12,36 @@ import (
 )
 
 type Config struct {
-	Addr, DatabaseURL, MediaDir                   string
-	ARIURL, ARIApp, ARIUser, ARIPassword          string
-	ARIEndpointTemplate, ARIContext, ARIExtension string
-	OperatorToken, ApproverToken                  string
-	HMACKey                                       []byte
-	DialingEnabled                                bool
-	MaxConcurrency                                int
-	CPS                                           float64
-	WindowStart, WindowEnd                        time.Duration
-	AssetMaxDuration                              time.Duration
-	MaxBodyBytes                                  int64
+	HTTPAddr, MetricsAddr, DatabaseURL, MediaDir string
+	ARIURL, ARIApp, ARIUser, ARIPassword         string
+	ARIEndpoint, OperatorToken, ApproverToken    string
+	PhoneHashKey, FieldEncryptionKey             []byte
+	AuditHMACKey                                 []byte
+	DialingEnabled                               bool
+	MaxConcurrency                               int
+	CPS                                          float64
+	WindowStart, WindowEnd                       time.Duration
+	AssetMaxDuration                             time.Duration
+	MaxBodyBytes                                 int64
 }
 
 func LoadConfig() (Config, error) { return loadConfig(os.LookupEnv) }
 
 func loadConfig(get func(string) (string, bool)) (Config, error) {
 	c := Config{
-		Addr:                value(get, "HTTP_ADDR", ":8080"),
-		DatabaseURL:         aliasValue(get, "DATABASE_URL", "DB_URL", ""),
-		MediaDir:            value(get, "MEDIA_DIR", "/var/lib/dialer/media"),
-		ARIURL:              strings.TrimRight(value(get, "ARI_URL", ""), "/"),
-		ARIApp:              value(get, "ARI_APP", ""),
-		ARIUser:             value(get, "ARI_USER", ""),
-		ARIPassword:         value(get, "ARI_PASSWORD", ""),
-		ARIEndpointTemplate: value(get, "ARI_ENDPOINT_TEMPLATE", "PJSIP/%s@outbound"),
-		ARIContext:          value(get, "ARI_CONTEXT", "outbound-compliance"),
-		ARIExtension:        value(get, "ARI_EXTENSION", "s"),
-		OperatorToken:       aliasValue(get, "OPERATOR_API_TOKEN", "OPERATOR_TOKEN", ""),
-		ApproverToken:       aliasValue(get, "APPROVER_API_TOKEN", "APPROVER_TOKEN", ""),
-		MaxBodyBytes:        20 << 20,
-		AssetMaxDuration:    10 * time.Minute,
+		HTTPAddr:         value(get, "HTTP_ADDR", ":8080"),
+		MetricsAddr:      value(get, "METRICS_ADDR", ":9090"),
+		DatabaseURL:      value(get, "DATABASE_URL", ""),
+		MediaDir:         value(get, "MEDIA_DIR", "/var/lib/dialer/media"),
+		ARIURL:           strings.TrimRight(value(get, "ARI_URL", ""), "/"),
+		ARIApp:           value(get, "ARI_APP", ""),
+		ARIUser:          value(get, "ARI_USER", ""),
+		ARIPassword:      value(get, "ARI_PASSWORD", ""),
+		ARIEndpoint:      value(get, "ARI_ENDPOINT", ""),
+		OperatorToken:    value(get, "OPERATOR_API_TOKEN", ""),
+		ApproverToken:    value(get, "APPROVER_API_TOKEN", ""),
+		MaxBodyBytes:     20 << 20,
+		AssetMaxDuration: 10 * time.Minute,
 	}
 	var err error
 	if c.DialingEnabled, err = boolValue(get, "DIALING_ENABLED", false); err != nil {
@@ -60,11 +59,18 @@ func loadConfig(get func(string) (string, bool)) (Config, error) {
 	if c.WindowEnd, err = clockValue(get, "CALLING_HOURS_END", "21:00"); err != nil {
 		return c, err
 	}
-	key := value(get, "HMAC_KEY", "")
-	if decoded, decErr := base64.StdEncoding.DecodeString(key); decErr == nil && len(decoded) >= 32 {
-		c.HMACKey = decoded
-	} else {
-		c.HMACKey = []byte(key)
+	keys := []struct {
+		name   string
+		target *[]byte
+	}{
+		{"PHONE_HASH_KEY", &c.PhoneHashKey},
+		{"FIELD_ENCRYPTION_KEY", &c.FieldEncryptionKey},
+		{"AUDIT_HMAC_KEY", &c.AuditHMACKey},
+	}
+	for _, key := range keys {
+		if *key.target, err = keyValue(get, key.name); err != nil {
+			return c, err
+		}
 	}
 	return c, c.Validate()
 }
@@ -73,23 +79,32 @@ func (c Config) Validate() error {
 	switch {
 	case c.DatabaseURL == "":
 		return errors.New("DATABASE_URL is required")
-	case c.OperatorToken == "" || c.ApproverToken == "":
-		return errors.New("both role API tokens are required")
+	case c.HTTPAddr == "" || c.MetricsAddr == "" || c.HTTPAddr == c.MetricsAddr:
+		return errors.New("HTTP_ADDR and METRICS_ADDR must be distinct")
+	case !highEntropy([]byte(c.OperatorToken)):
+		return errors.New("OPERATOR_API_TOKEN must be at least 32 high-entropy bytes")
+	case !highEntropy([]byte(c.ApproverToken)):
+		return errors.New("APPROVER_API_TOKEN must be at least 32 high-entropy bytes")
 	case c.OperatorToken == c.ApproverToken:
 		return errors.New("operator and approver tokens must differ")
-	case len(c.HMACKey) < 32:
-		return errors.New("HMAC_KEY must contain at least 32 bytes")
+	case !highEntropy(c.PhoneHashKey):
+		return errors.New("PHONE_HASH_KEY must contain at least 32 high-entropy bytes")
+	case !highEntropy(c.FieldEncryptionKey):
+		return errors.New("FIELD_ENCRYPTION_KEY must contain at least 32 high-entropy bytes")
+	case !highEntropy(c.AuditHMACKey):
+		return errors.New("AUDIT_HMAC_KEY must contain at least 32 high-entropy bytes")
+	case !distinctKeys(c.PhoneHashKey, c.FieldEncryptionKey, c.AuditHMACKey):
+		return errors.New("phone, encryption, and audit keys must differ")
 	case c.MaxConcurrency < 1 || c.MaxConcurrency > 100:
 		return errors.New("MAX_CONCURRENCY must be between 1 and 100")
-	case c.CPS < 0 || c.CPS > 100:
+	case math.IsNaN(c.CPS) || math.IsInf(c.CPS, 0) || c.CPS < 0 || c.CPS > 100:
 		return errors.New("CPS must be between 0 and 100")
 	case c.WindowStart >= c.WindowEnd:
 		return errors.New("calling hours must be an increasing same-day window")
-	case strings.Count(c.ARIEndpointTemplate, "%s") != 1:
-		return errors.New("ARI_ENDPOINT_TEMPLATE must contain exactly one %s")
 	}
 	if c.DialingEnabled {
-		if c.ARIURL == "" || c.ARIApp == "" || c.ARIUser == "" || c.ARIPassword == "" {
+		if c.ARIURL == "" || c.ARIApp == "" || c.ARIUser == "" ||
+			c.ARIPassword == "" || !validEndpointName(c.ARIEndpoint) {
 			return errors.New("ARI settings are required when dialing is enabled")
 		}
 		u, err := url.Parse(c.ARIURL)
@@ -106,13 +121,6 @@ func value(get func(string) (string, bool), key, fallback string) string {
 		return strings.TrimSpace(v)
 	}
 	return fallback
-}
-
-func aliasValue(get func(string) (string, bool), primary, alias, fallback string) string {
-	if value, ok := get(primary); ok {
-		return strings.TrimSpace(value)
-	}
-	return value(get, alias, fallback)
 }
 
 func boolValue(get func(string) (string, bool), key string, fallback bool) (bool, error) {

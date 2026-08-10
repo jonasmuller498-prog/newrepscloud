@@ -1,5 +1,6 @@
 (() => {
-  const {request, saveTokens, restoreTokens} = window.DialerAPI;
+  const {request, saveToken, restoreToken, hasToken} =
+    window.DialerAPI.client("operator", "#operator-token");
   let campaigns = [];
   const $ = selector => document.querySelector(selector);
   const node = (tag, className, text) => {
@@ -110,7 +111,7 @@
   }
 
   $("#save-tokens").addEventListener("click", () => {
-    saveTokens();
+    saveToken();
     notice("Tokens saved in session storage for this tab.");
     refresh();
   });
@@ -132,8 +133,10 @@
     const file = $("#csv-file").files[0], id = selectedCampaign();
     if (!file || !id) return notice("Select a campaign and CSV file.");
     try {
-      await request(`/api/v1/campaigns/${id}/recipients`, {method: "POST", body: file});
-      notice("Recipient CSV imported."); await refresh();
+      await request(`/api/v1/campaigns/${id}/recipients`, {
+        method: "POST", body: file, headers: {"Idempotency-Key": crypto.randomUUID()}
+      });
+      notice("Recipient import queued."); await refresh();
     } catch (error) { notice(error.message); }
   });
   $("#upload-wav").addEventListener("click", async () => {
@@ -149,14 +152,14 @@
     const action = button.dataset.action, id = selectedCampaign();
     if (!id) return notice("Select a campaign.");
     if ((action === "start" || action === "cancel") && !confirm(`Confirm ${action}?`)) return;
-    let body, role = action === "approve" ? "approver" : "operator";
+    let body;
     if (action === "schedule") {
       const value = $("#schedule-at").value;
       if (!value) return notice("Choose a schedule time.");
       body = JSON.stringify({scheduled_at: new Date(value).toISOString()});
     }
     try {
-      await request(`/api/v1/campaigns/${id}/${action}`, {method: "POST", body}, role);
+      await request(`/api/v1/campaigns/${id}/${action}`, {method: "POST", body});
       notice(`${action} completed.`); await refresh();
     } catch (error) {
       notice(error.message);
@@ -164,6 +167,6 @@
     }
   }));
 
-  restoreTokens();
-  if (sessionStorage.getItem("operatorToken")) refresh();
+  restoreToken();
+  if (hasToken()) refresh();
 })();

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Compliance Dialer Approver</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">Independent review</p>
+      <h1>Approver console</h1>
+    </div>
+    <a href="/">Operator console</a>
+  </header>
+  <main>
+    <section class="warning">
+      This page uses only an approver session. Review the selected audio and caller-ID
+      evidence independently before approval.
+    </section>
+    <section class="panel">
+      <h2>Approver access</h2>
+      <label>Approver token<input id="approver-token" type="password" autocomplete="off"></label>
+      <button id="save-token">Save for this browser tab</button>
+    </section>
+    <section class="panel">
+      <h2>Campaign review</h2>
+      <label>Campaign<select id="campaign-select"></select></label>
+      <div id="campaign-detail" class="list"></div>
+      <div id="blocks" class="blocks" aria-live="polite"></div>
+      <div class="controls">
+        <button id="refresh" class="secondary">Refresh</button>
+        <button id="approve" class="approver">Approve selected campaign</button>
+      </div>
+    </section>
+    <p id="notice" role="status" aria-live="polite"></p>
+  </main>
+  <script src="/api.js"></script>
+  <script src="/approver.js"></script>
+</body>
+</html>

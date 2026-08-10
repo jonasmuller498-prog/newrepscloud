@@ -2,25 +2,54 @@ package main
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) PersistARIEvent(
+func (s *Store) ApplyARIEvent(
 	ctx context.Context, event ARIEvent, raw []byte,
-) (attemptID, state string, inserted bool, err error) {
+) (attemptID string, inserted bool, err error) {
 	channelID := event.ChannelID()
 	if channelID == "" {
-		return "", "", false, errNotFound
+		return "", false, errNotFound
 	}
-	err = s.pool.QueryRow(ctx, "SELECT id,state FROM call_attempts WHERE channel_id=$1",
-		channelID).Scan(&attemptID, &state)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
-		return "", "", false, dbError(err)
+		return "", false, err
 	}
-	tag, err := s.pool.Exec(ctx, `INSERT INTO call_events
+	defer tx.Rollback(ctx)
+	var recipientID string
+	err = tx.QueryRow(ctx, `SELECT cr.id FROM call_attempts a
+		JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
+		WHERE a.channel_id=$1 FOR UPDATE OF cr`, channelID).Scan(&recipientID)
+	if err != nil {
+		return "", false, dbError(err)
+	}
+	err = tx.QueryRow(ctx, `SELECT id FROM call_attempts
+		WHERE channel_id=$1 FOR UPDATE`, channelID).Scan(&attemptID)
+	if err != nil {
+		return "", false, dbError(err)
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO call_events
 		(attempt_id,ari_event_id,event_type,raw) VALUES($1,$2,$3,$4)
 		ON CONFLICT(attempt_id,ari_event_id) WHERE ari_event_id IS NOT NULL DO NOTHING`,
-		attemptID, event.Key(raw), event.Type, raw)
-	return attemptID, state, err == nil && tag.RowsAffected() == 1, err
+		attemptID, event.Key(raw), event.Type, event.SafeJSON())
+	if err != nil {
+		return "", false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return attemptID, false, tx.Commit(ctx)
+	}
+	if err = s.projectARIEventTx(ctx, tx, attemptID, event); err != nil {
+		return "", false, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE call_events SET processed_at=now()
+		WHERE attempt_id=$1 AND ari_event_id=$2`,
+		attemptID, event.Key(raw))
+	if err != nil {
+		return "", false, err
+	}
+	return attemptID, true, tx.Commit(ctx)
 }
 
 func (s *Store) ListEvents(ctx context.Context, campaignID string) ([]CallEvent, error) {

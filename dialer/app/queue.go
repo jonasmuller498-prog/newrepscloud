@@ -22,6 +22,7 @@ type queueCandidate struct {
 	WindowStartSecs           float64
 	WindowEndSecs             float64
 	DatabaseNow               time.Time
+	Media                     MediaSpec
 }
 
 func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
@@ -54,6 +55,10 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 			candidate.ID, next)
 		return nil, commitIfNoError(ctx, tx, err)
 	}
+	if _, err = verifyMediaFile(s.config.MediaDir, candidate.Media,
+		s.config.AssetMaxDuration, s.config.MaxBodyBytes); err != nil {
+		return nil, err
+	}
 	var slot int
 	err = tx.QueryRow(ctx, `SELECT slot_no FROM dialer_slots
 		WHERE slot_no<=$1 AND attempt_id IS NULL ORDER BY slot_no
@@ -63,16 +68,6 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 	}
 	if err != nil {
 		return nil, err
-	}
-	allowed, nextToken, err := takeCPSToken(ctx, tx, s.config.CPS)
-	if err != nil {
-		return nil, err
-	}
-	if !allowed {
-		_, err = tx.Exec(ctx, `UPDATE campaign_recipients
-			SET next_attempt_at=GREATEST(next_attempt_at,$2) WHERE id=$1`,
-			candidate.ID, nextToken)
-		return nil, commitIfNoError(ctx, tx, err)
 	}
 	attemptNo := candidate.AttemptCount + 1
 	attemptID := attemptUUID(candidate.ID, attemptNo)
@@ -111,25 +106,29 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 func claimCandidate(ctx context.Context, tx pgx.Tx) (queueCandidate, error) {
 	var c queueCandidate
 	err := tx.QueryRow(ctx, `SELECT cr.id,cr.recipient_id,cr.timezone,cr.attempt_count,
-		EXTRACT(EPOCH FROM c.window_start),EXTRACT(EPOCH FROM c.window_end),clock_timestamp()
+		EXTRACT(EPOCH FROM c.window_start),EXTRACT(EPOCH FROM c.window_end),clock_timestamp(),
+		ma.storage_name,ma.sha256,ma.byte_size,ma.duration_ms
 		FROM campaign_recipients cr JOIN campaigns c ON c.id=cr.campaign_id
 		JOIN recipients r ON r.id=cr.recipient_id
 		JOIN consent_evidence ce ON ce.id=cr.consent_evidence_id
 		JOIN caller_ids ci ON ci.id=c.caller_id_id
+		JOIN message_assets ma ON ma.id=c.message_asset_id
 		JOIN campaign_approvals ca ON ca.campaign_id=c.id
 		  AND ca.message_asset_id=c.message_asset_id AND ca.caller_id_id=c.caller_id_id
 		WHERE c.state='RUNNING' AND cr.status='QUEUED' AND cr.next_attempt_at<=clock_timestamp()
 		  AND cr.attempt_count<3 AND c.dnc_attested_at>=clock_timestamp()-interval '31 days'
 		  AND c.dnc_attested_at<=clock_timestamp()+interval '5 minutes'
 		  AND ce.consent_at<=clock_timestamp()+interval '5 minutes' AND ce.source<>''
-		  AND ci.authorized_at<=clock_timestamp()+interval '5 minutes'
+		  AND ci.authorized_at<=clock_timestamp()
 		  AND NOT EXISTS(SELECT 1 FROM suppressions sp WHERE sp.phone_hash=r.phone_hash)
 		  AND NOT EXISTS(SELECT 1 FROM call_attempts active
 		    WHERE active.recipient_id=cr.recipient_id AND active.state IN
-		    ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED'))
+		    ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED',
+		     'TERMINATING','UNCERTAIN'))
 		ORDER BY cr.next_attempt_at,cr.id FOR UPDATE OF cr SKIP LOCKED LIMIT 1`).
 		Scan(&c.ID, &c.RecipientID, &c.Timezone, &c.AttemptCount, &c.WindowStartSecs,
-			&c.WindowEndSecs, &c.DatabaseNow)
+			&c.WindowEndSecs, &c.DatabaseNow, &c.Media.StorageName, &c.Media.SHA256,
+			&c.Media.ByteSize, &c.Media.DurationMS)
 	return c, err
 }
 

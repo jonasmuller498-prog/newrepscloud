@@ -28,15 +28,18 @@ func (c *ARIConsumer) Run(ctx context.Context) {
 		conn, err := c.client.ConnectEvents(ctx)
 		if err != nil {
 			c.gate.ariConnected.Store(false)
+			c.markDisconnected(ctx)
 			c.log.Warn("ARI event connection unavailable", "error", err)
 			waitContext(ctx, backoff)
 			backoff = min(backoff*2, 15*time.Second)
 			continue
 		}
 		backoff = time.Second
+		c.markDisconnected(ctx)
 		c.gate.ariConnected.Store(true)
 		c.readEvents(ctx, conn)
 		c.gate.ariConnected.Store(false)
+		c.markDisconnected(ctx)
 		_ = conn.Close()
 	}
 }
@@ -87,28 +90,32 @@ func (c *ARIConsumer) readEvents(ctx context.Context, conn *websocket.Conn) {
 func (c *ARIConsumer) handleEvent(ctx context.Context, event ARIEvent, raw []byte) error {
 	eventCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
 	defer cancel()
-	attemptID, previous, inserted, err := c.store.PersistARIEvent(eventCtx, event, raw)
+	attemptID, inserted, err := c.store.ApplyARIEvent(eventCtx, event, raw)
 	if err != nil {
 		return err
 	}
 	if inserted {
 		c.metrics.ariEvents.Add(1)
 	}
-	if event.Type == "ChannelDtmfReceived" && event.Digit == "9" {
-		return c.store.OptOutAttempt(eventCtx, attemptID, "ari_dtmf_9", "ari:"+c.store.config.ARIApp)
-	}
-	if state := eventState(event); state != "" {
-		return c.store.UpdateAttemptState(eventCtx, attemptID, state)
-	}
-	switch event.Type {
-	case "PlaybackFinished":
-		return c.store.FinishAttempt(eventCtx, attemptID, "completed")
-	case "ChannelDestroyed", "StasisEnd":
-		outcome := destroyedOutcome(event, previous)
-		if outcome == "ambiguous" {
-			c.metrics.quarantined.Add(1)
+	if inserted && (event.Type == "PlaybackFinished" ||
+		(event.Type == "ChannelDtmfReceived" && event.Digit == "9")) {
+		pending, pendingErr := c.store.AttemptTerminationPending(eventCtx, attemptID)
+		if pendingErr != nil {
+			return pendingErr
 		}
-		return c.store.FinishAttempt(eventCtx, attemptID, outcome)
+		if pending {
+			hangCtx, hangCancel := context.WithTimeout(ctx, 10*time.Second)
+			_, _ = c.client.Hangup(hangCtx, event.ChannelID())
+			hangCancel()
+		}
 	}
 	return nil
+}
+
+func (c *ARIConsumer) markDisconnected(ctx context.Context) {
+	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+	defer cancel()
+	if err := c.store.MarkActiveUncertain(dbCtx); err != nil && ctx.Err() == nil {
+		c.log.Error("failed to mark disconnected ARI calls uncertain", "error", err)
+	}
 }

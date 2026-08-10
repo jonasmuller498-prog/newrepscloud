@@ -24,13 +24,22 @@ type ARIClient struct {
 }
 
 type OriginateCommand struct {
-	AttemptID, ChannelID, Phone, CallerID, Media string
+	AttemptID, ChannelID, Phone, CallerID, MediaSHA string
 }
 
 type OriginateResult struct {
-	Accepted  bool
-	Outcome   string
-	Uncertain bool
+	Accepted   bool
+	NotFound   bool
+	Outcome    string
+	Uncertain  bool
+	StatusCode int
+}
+
+type ARICommands interface {
+	Originate(context.Context, OriginateCommand) (OriginateResult, error)
+	Play(context.Context, string, string, string) (OriginateResult, error)
+	Hangup(context.Context, string) (OriginateResult, error)
+	ChannelExists(context.Context, string) (bool, error)
 }
 
 func NewARIClient(config Config) *ARIClient {
@@ -42,53 +51,104 @@ func NewARIClient(config Config) *ARIClient {
 }
 
 func (c *ARIClient) Originate(ctx context.Context, cmd OriginateCommand) (OriginateResult, error) {
-	var result OriginateResult
-	base, err := url.Parse(c.config.ARIURL)
+	phone, err := normalizeE164(cmd.Phone)
 	if err != nil {
-		return result, err
+		return OriginateResult{Outcome: "invalid"}, errors.New("invalid originate command")
 	}
-	base.Path = ariPath(base.Path, "channels")
-	query := base.Query()
-	query.Set("endpoint", strings.Replace(c.config.ARIEndpointTemplate, "%s", cmd.Phone, 1))
-	query.Set("extension", c.config.ARIExtension)
-	query.Set("context", c.config.ARIContext)
-	query.Set("priority", "1")
+	query := url.Values{}
+	query.Set("endpoint", "PJSIP/"+phone+"@"+c.config.ARIEndpoint)
 	query.Set("app", c.config.ARIApp)
 	query.Set("appArgs", cmd.AttemptID)
 	query.Set("callerId", cmd.CallerID)
 	query.Set("channelId", cmd.ChannelID)
-	base.RawQuery = query.Encode()
 	body, _ := json.Marshal(map[string]any{"variables": map[string]string{
 		"DIALER_ATTEMPT_ID": cmd.AttemptID,
-		"DIALER_MEDIA":      cmd.Media,
 	}})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), bytes.NewReader(body))
-	if err != nil {
+	return c.request(ctx, http.MethodPost, "channels", query, body, false)
+}
+
+func (c *ARIClient) Play(
+	ctx context.Context, channelID, playbackID, mediaSHA string,
+) (OriginateResult, error) {
+	query := url.Values{}
+	query.Set("media", mediaURI(mediaSHA))
+	query.Set("playbackId", playbackID)
+	resource := path.Join("channels", channelID, "play")
+	result, err := c.request(ctx, http.MethodPost, resource, query, nil, false)
+	if result.StatusCode != http.StatusConflict {
 		return result, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	exists, lookupErr := c.resourceExists(ctx, path.Join("playbacks", playbackID))
+	if lookupErr != nil {
+		return OriginateResult{Outcome: "ambiguous", Uncertain: true}, lookupErr
+	}
+	if exists {
+		result.Accepted, result.Outcome = true, ""
+		return result, nil
+	}
+	return result, err
+}
+
+func (c *ARIClient) Hangup(ctx context.Context, channelID string) (OriginateResult, error) {
+	return c.request(ctx, http.MethodDelete, path.Join("channels", channelID), nil, nil, true)
+}
+
+func (c *ARIClient) ChannelExists(ctx context.Context, channelID string) (bool, error) {
+	return c.resourceExists(ctx, path.Join("channels", channelID))
+}
+
+func (c *ARIClient) resourceExists(ctx context.Context, resource string) (bool, error) {
+	result, err := c.request(ctx, http.MethodGet, resource, nil, nil, false)
+	if result.NotFound {
+		return false, nil
+	}
+	return result.Accepted, err
+}
+
+func (c *ARIClient) request(
+	ctx context.Context, method, resource string, query url.Values, body []byte, missingOK bool,
+) (OriginateResult, error) {
+	var result OriginateResult
+	base, err := url.Parse(c.config.ARIURL)
+	if err != nil {
+		return result, errors.New("invalid ARI base URL")
+	}
+	base.Path = ariPath(base.Path, resource)
+	base.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, method, base.String(), bytes.NewReader(body))
+	if err != nil {
+		return result, errors.New("invalid ARI request")
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.SetBasicAuth(c.config.ARIUser, c.config.ARIPassword)
 	response, err := c.http.Do(req)
 	if err != nil {
-		result.Uncertain, result.Outcome = true, "ambiguous"
-		return result, errors.New("ARI originate transport outcome is ambiguous")
+		return OriginateResult{Outcome: "ambiguous", Uncertain: true},
+			errors.New("ARI transport outcome is ambiguous")
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+	result.StatusCode = response.StatusCode
 	switch {
 	case response.StatusCode >= 200 && response.StatusCode < 300:
 		result.Accepted = true
-	case response.StatusCode == 401 || response.StatusCode == 403:
+	case response.StatusCode == http.StatusNotFound:
+		result.NotFound = true
+		result.Accepted = missingOK
+		result.Outcome = "not_found"
+	case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
 		result.Outcome = "forbidden"
-	case response.StatusCode == 429 || response.StatusCode >= 500:
+	case response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500:
 		result.Outcome = "temporary"
 	case response.StatusCode >= 400 && response.StatusCode < 500:
 		result.Outcome = "invalid"
 	default:
-		result.Uncertain, result.Outcome = true, "ambiguous"
+		result.Outcome, result.Uncertain = "ambiguous", true
 	}
 	if !result.Accepted {
-		return result, fmt.Errorf("ARI originate returned status %d", response.StatusCode)
+		return result, fmt.Errorf("ARI request returned status %d", response.StatusCode)
 	}
 	return result, nil
 }

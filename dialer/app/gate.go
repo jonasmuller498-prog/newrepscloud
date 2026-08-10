@@ -16,7 +16,7 @@ func (g *DependencyGate) ReadyForDial() bool {
 }
 
 func checkMediaDirectory(dir string) bool {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return false
 	}
 	file, err := os.CreateTemp(dir, ".health-*")
@@ -25,7 +25,7 @@ func checkMediaDirectory(dir string) bool {
 	}
 	name := file.Name()
 	defer os.Remove(filepath.Clean(name))
-	if err = file.Chmod(0600); err == nil {
+	if err = file.Chmod(0640); err == nil {
 		_, err = file.Write([]byte("ok"))
 	}
 	closeErr := file.Close()

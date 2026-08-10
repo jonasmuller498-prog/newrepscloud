@@ -20,12 +20,12 @@
       An operator must explicitly start a scheduled, separately approved campaign.
     </section>
     <section class="panel">
-      <h2>Access</h2>
-      <div class="grid two">
+      <h2>Operator access</h2>
+      <div class="grid">
         <label>Operator token<input id="operator-token" type="password" autocomplete="off"></label>
-        <label>Approver token<input id="approver-token" type="password" autocomplete="off"></label>
       </div>
       <button id="save-tokens">Save for this browser tab</button>
+      <p class="hint"><a href="/approver.html">Open the separate approver console</a>.</p>
     </section>
     <section class="panel">
       <h2>System status</h2>
@@ -63,10 +63,9 @@
       <div id="caller-ids" class="list"></div>
     </section>
     <section class="panel">
-      <h2>Approval and controls</h2>
+      <h2>Campaign controls</h2>
       <div class="controls">
         <button data-action="validate">Submit validation</button>
-        <button data-action="approve" class="approver">Approve</button>
         <input id="schedule-at" type="datetime-local" aria-label="Scheduled time">
         <button data-action="schedule">Schedule</button>
         <button data-action="start" class="danger">Start calls</button>

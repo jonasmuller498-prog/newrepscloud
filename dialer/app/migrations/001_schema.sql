@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS message_assets (
+CREATE TABLE message_assets (
     id uuid PRIMARY KEY,
     sha256 bytea NOT NULL UNIQUE,
     storage_name text NOT NULL UNIQUE,
@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS message_assets (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS caller_ids (
+CREATE TABLE caller_ids (
     id uuid PRIMARY KEY,
     phone_cipher bytea NOT NULL,
     phone_hash bytea NOT NULL UNIQUE,
@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS caller_ids (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS campaigns (
+CREATE TABLE campaigns (
     id uuid PRIMARY KEY,
     name text NOT NULL CHECK (length(name) BETWEEN 1 AND 200),
     state text NOT NULL DEFAULT 'DRAFT' CHECK (state IN
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
     CHECK (window_start < window_end)
 );
 
-CREATE TABLE IF NOT EXISTS campaign_approvals (
+CREATE TABLE campaign_approvals (
     id uuid PRIMARY KEY,
     campaign_id uuid NOT NULL UNIQUE REFERENCES campaigns(id),
     message_asset_id uuid NOT NULL REFERENCES message_assets(id),
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS campaign_approvals (
     approved_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS recipients (
+CREATE TABLE recipients (
     id uuid PRIMARY KEY,
     phone_cipher bytea NOT NULL,
     phone_hash bytea NOT NULL UNIQUE,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS recipients (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS consent_evidence (
+CREATE TABLE consent_evidence (
     id uuid PRIMARY KEY,
     recipient_id uuid NOT NULL REFERENCES recipients(id),
     consent_at timestamptz NOT NULL,
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS consent_evidence (
     UNIQUE (recipient_id, consent_at, source)
 );
 
-CREATE TABLE IF NOT EXISTS suppressions (
+CREATE TABLE suppressions (
     phone_hash bytea PRIMARY KEY,
     phone_cipher bytea NOT NULL,
     reason text NOT NULL,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS suppressions (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS campaign_recipients (
+CREATE TABLE campaign_recipients (
     id uuid PRIMARY KEY,
     campaign_id uuid NOT NULL REFERENCES campaigns(id),
     recipient_id uuid NOT NULL REFERENCES recipients(id),
@@ -87,10 +87,10 @@ CREATE TABLE IF NOT EXISTS campaign_recipients (
     UNIQUE (campaign_id, recipient_id)
 );
 
-CREATE INDEX IF NOT EXISTS campaign_recipient_queue
+CREATE INDEX campaign_recipient_queue
     ON campaign_recipients (next_attempt_at, campaign_id) WHERE status = 'QUEUED';
 
-CREATE OR REPLACE FUNCTION reject_immutable_change() RETURNS trigger
+CREATE FUNCTION reject_immutable_change() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'UPDATE' AND NEW IS NOT DISTINCT FROM OLD THEN
@@ -100,17 +100,14 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS message_assets_immutable ON message_assets;
 CREATE TRIGGER message_assets_immutable
 BEFORE UPDATE OR DELETE ON message_assets
 FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();
 
-DROP TRIGGER IF EXISTS consent_evidence_immutable ON consent_evidence;
 CREATE TRIGGER consent_evidence_immutable
 BEFORE UPDATE OR DELETE ON consent_evidence
 FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();
 
-DROP TRIGGER IF EXISTS campaign_approvals_immutable ON campaign_approvals;
 CREATE TRIGGER campaign_approvals_immutable
 BEFORE UPDATE OR DELETE ON campaign_approvals
 FOR EACH ROW EXECUTE FUNCTION reject_immutable_change();
