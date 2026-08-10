@@ -20,6 +20,7 @@ type ARIConsumer struct {
 
 func (c *ARIConsumer) Run(ctx context.Context) {
 	backoff := time.Second
+	recoveryNeeded := true
 	for ctx.Err() == nil {
 		if !c.config.DialingEnabled {
 			c.gate.ariConnected.Store(false)
@@ -43,25 +44,29 @@ func (c *ARIConsumer) Run(ctx context.Context) {
 			backoff = min(backoff*2, 15*time.Second)
 			continue
 		}
+		if recoveryNeeded {
+			if err := c.markDisconnected(ctx); err != nil {
+				waitContext(ctx, backoff)
+				backoff = min(backoff*2, 15*time.Second)
+				continue
+			}
+			recoveryNeeded = false
+		}
 		conn, err := c.client.ConnectEvents(ctx)
 		if err != nil {
-			_ = c.markDisconnected(ctx)
 			c.log.Warn("ARI event connection unavailable", "error", err)
 			waitContext(ctx, backoff)
 			backoff = min(backoff*2, 15*time.Second)
 			continue
 		}
 		backoff = time.Second
-		if err = c.markDisconnected(ctx); err != nil {
-			_ = conn.Close()
-			waitContext(ctx, backoff)
-			continue
-		}
 		c.gate.journalReady.Store(true)
 		c.gate.ariConnected.Store(true)
 		c.readEvents(ctx, conn)
 		c.gate.ariConnected.Store(false)
-		_ = c.markDisconnected(ctx)
+		if ctx.Err() == nil {
+			recoveryNeeded = c.markDisconnected(ctx) != nil
+		}
 		_ = conn.Close()
 	}
 }
@@ -79,6 +84,9 @@ func (c *ARIConsumer) readEvents(ctx context.Context, conn *websocket.Conn) {
 		defer ticker.Stop()
 		for {
 			select {
+			case <-ctx.Done():
+				_ = conn.Close()
+				return
 			case <-done:
 				return
 			case <-ticker.C:
@@ -113,6 +121,9 @@ func (c *ARIConsumer) readEvents(ctx context.Context, conn *websocket.Conn) {
 }
 
 func (c *ARIConsumer) markDisconnected(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
 	defer cancel()
 	if err := c.store.MarkActiveUncertain(dbCtx); err != nil && ctx.Err() == nil {

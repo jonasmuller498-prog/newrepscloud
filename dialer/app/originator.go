@@ -10,6 +10,7 @@ import (
 type deliveryStore interface {
 	ClaimOutbox(context.Context) (*OutboxItem, error)
 	ResetOutbox(context.Context, string) error
+	LoadOriginateRecovery(context.Context, OutboxItem) (*OriginateRecovery, error)
 	PrepareOriginate(context.Context, OutboxItem) (OriginateCommand, bool, time.Time, error)
 	CompleteOriginate(context.Context, OutboxItem, OriginateResult) (bool, error)
 	PreparePlay(context.Context, OutboxItem) (PlayCommand, error)
@@ -84,6 +85,15 @@ func (o *Originator) process(ctx context.Context, item OutboxItem) error {
 
 func (o *Originator) processOriginate(ctx context.Context, item OutboxItem) error {
 	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
+	recovery, err := o.store.LoadOriginateRecovery(dbCtx, item)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if recovery != nil {
+		return o.recoverOriginate(ctx, item, *recovery)
+	}
+	dbCtx, cancel = context.WithTimeout(ctx, defaultDBTimeout)
 	command, permitted, retryAt, err := o.store.PrepareOriginate(dbCtx, item)
 	cancel()
 	if err != nil {

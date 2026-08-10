@@ -112,6 +112,31 @@ func TestDuplicateARIEventClearsJournalWithoutDoubleCount(t *testing.T) {
 	}
 }
 
+func TestUnsafeARIEventIsRejectedWithoutClosingGate(t *testing.T) {
+	store := &fakeARIEventStore{}
+	gate, metrics := &DependencyGate{}, &Metrics{}
+	gate.ariConnected.Store(true)
+	gate.journalReady.Store(true)
+	processor := newTestProcessor(
+		t.TempDir(), store, fakeARIHangupper{}, gate, metrics)
+	raw := []byte(`{"type":"StasisStart","channel":{"id":"unmanaged","state":"Up"}}`)
+	event, err := parseARIEvent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = processor.Handle(context.Background(), event, raw); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := processor.journal.Entries()
+	if err != nil || len(entries) != 0 || store.calls != 0 {
+		t.Fatalf("entries=%d calls=%d err=%v", len(entries), store.calls, err)
+	}
+	if !gate.ariConnected.Load() || !gate.journalReady.Load() ||
+		metrics.ariEventsRejected.Load() != 1 {
+		t.Fatal("unsafe event closed the gate or was not counted")
+	}
+}
+
 func TestMalformedARIJournalBlocksReplay(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/bad.json"

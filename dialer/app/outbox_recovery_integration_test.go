@@ -72,6 +72,40 @@ func TestHangupTerminalActionsRequeueWithResetTimestamps(t *testing.T) {
 	}
 }
 
+func TestAbandonedClaimReleasesRecipientAndSlot(t *testing.T) {
+	store, ctx := integrationStore(t, 1)
+	_, _ = seedQueue(t, ctx, store)
+	attempt, err := store.AllocateAttempt(ctx)
+	if err != nil || attempt == nil {
+		t.Fatalf("allocate=%+v err=%v", attempt, err)
+	}
+	_, err = store.pool.Exec(ctx, `UPDATE outbox SET state='DONE',processed_at=now()
+		WHERE aggregate_id=$1 AND kind='ARI_ORIGINATE'`,
+		attempt.ID)
+	if err == nil {
+		_, err = store.pool.Exec(ctx, `UPDATE call_attempts
+			SET updated_at=now()-interval '3 minutes' WHERE id=$1`, attempt.ID)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.ReconcileDatabase(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var state, status string
+	var attemptCount, occupied int
+	err = store.pool.QueryRow(ctx, `SELECT a.state,cr.status,cr.attempt_count,
+		(SELECT count(*) FROM dialer_slots WHERE attempt_id=a.id)
+		FROM call_attempts a JOIN campaign_recipients cr
+		  ON cr.id=a.campaign_recipient_id WHERE a.id=$1`, attempt.ID).
+		Scan(&state, &status, &attemptCount, &occupied)
+	if err != nil || state != "CANCELLED" || status != "QUEUED" ||
+		attemptCount != 0 || occupied != 0 {
+		t.Fatalf("state=%s status=%s count=%d slot=%d err=%v",
+			state, status, attemptCount, occupied, err)
+	}
+}
+
 func pendingHangup(t *testing.T) (*Store, context.Context, string, string) {
 	t.Helper()
 	store, ctx := integrationStore(t, 1)

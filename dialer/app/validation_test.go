@@ -61,6 +61,8 @@ func TestRecipientCSVValidation(t *testing.T) {
 	invalid := []string{
 		strings.Replace(valid, "phone_e164", "phone", 1),
 		strings.Replace(valid, "America/New_York", "Local", 1),
+		strings.Replace(valid, "America/New_York", "UTC", 1),
+		strings.Replace(valid, "America/New_York", "Asia/Tokyo", 1),
 		strings.Replace(valid, "2026-08-01T12:00:00Z", "2027-08-01T12:00:00Z", 1),
 	}
 	for _, input := range invalid {

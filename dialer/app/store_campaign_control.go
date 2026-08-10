@@ -64,12 +64,9 @@ func (s *Store) stopCampaignDelivery(
 	if err != nil {
 		return err
 	}
-	states := []string{"ORIGINATING"}
-	if !pause {
-		states = []string{
-			"ORIGINATING", "RINGING", "ANSWERED", "MESSAGE_STARTED",
-			"TERMINATING", "UNCERTAIN",
-		}
+	states := []string{
+		"ORIGINATING", "RINGING", "ANSWERED", "MESSAGE_STARTED",
+		"TERMINATING", "UNCERTAIN",
 	}
 	if err = terminateCampaignAttempts(ctx, tx, id, states); err != nil {
 		return err

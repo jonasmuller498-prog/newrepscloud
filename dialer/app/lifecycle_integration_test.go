@@ -75,7 +75,7 @@ func TestAsyncImportIdempotency(t *testing.T) {
 		t.Fatal(err)
 	}
 	rows := []ImportRow{{
-		Phone: "+14155552671", Timezone: "UTC", ConsentSource: "form",
+		Phone: "+14155552671", Timezone: "America/New_York", ConsentSource: "form",
 		ConsentAt: time.Now().Add(-time.Hour).UTC(), Line: 2,
 	}}
 	first, err := store.CreateImportJob(ctx, campaign.ID, "v1:test-actor", "request-123", rows)

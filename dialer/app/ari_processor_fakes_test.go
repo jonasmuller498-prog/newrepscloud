@@ -12,6 +12,7 @@ type fakeARIEventStore struct {
 	alwaysFail bool
 	inserted   bool
 	calls      int
+	uncertain  int
 	keys       []string
 	order      *[]string
 }
@@ -39,7 +40,10 @@ func (*fakeARIEventStore) AttemptTerminationPending(context.Context, string) (bo
 	return false, nil
 }
 
-func (*fakeARIEventStore) MarkActiveUncertain(context.Context) error {
+func (s *fakeARIEventStore) MarkActiveUncertain(context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.uncertain++
 	return nil
 }
 

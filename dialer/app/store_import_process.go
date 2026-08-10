@@ -34,11 +34,17 @@ func (s *Store) ProcessImportJob(ctx context.Context, id string) error {
 	}
 	payload, err := s.protector.DecryptBytes(ciphertext)
 	if err != nil {
-		return err
+		_, err = tx.Exec(ctx, `UPDATE import_jobs SET state='FAILED',
+			error_code='payload_decrypt',processing_at=NULL,completed_at=now()
+			WHERE id=$1`, id)
+		return commitResult(ctx, tx, err)
 	}
 	var rows []ImportRow
 	if err = json.Unmarshal(payload, &rows); err != nil || len(rows) == 0 {
-		return errSafetyBlocked
+		_, err = tx.Exec(ctx, `UPDATE import_jobs SET state='FAILED',
+			error_code='payload_invalid',processing_at=NULL,completed_at=now()
+			WHERE id=$1`, id)
+		return commitResult(ctx, tx, err)
 	}
 	var imported int64
 	for _, row := range rows {

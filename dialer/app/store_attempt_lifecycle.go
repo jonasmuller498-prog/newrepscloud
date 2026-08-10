@@ -30,13 +30,13 @@ func (s *Store) finishAttemptTx(
 	ctx context.Context, tx pgx.Tx, attemptID, outcome string,
 ) error {
 	var campaignRecipientID, state, campaignState string
-	var attemptNo int
+	var attemptCount int
 	var answered, messageStarted bool
-	err := tx.QueryRow(ctx, `SELECT a.campaign_recipient_id,a.attempt_no,a.state,c.state
+	err := tx.QueryRow(ctx, `SELECT a.campaign_recipient_id,cr.attempt_count,a.state,c.state
 		,a.answered_at IS NOT NULL,a.playback_started_at IS NOT NULL
 		FROM call_attempts a JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
 		JOIN campaigns c ON c.id=cr.campaign_id WHERE a.id=$1 FOR UPDATE OF a,cr`,
-		attemptID).Scan(&campaignRecipientID, &attemptNo, &state, &campaignState,
+		attemptID).Scan(&campaignRecipientID, &attemptCount, &state, &campaignState,
 		&answered, &messageStarted)
 	if err != nil {
 		return dbError(err)
@@ -88,10 +88,12 @@ func (s *Store) finishAttemptTx(
 		status = "SUPPRESSED"
 	} else if outcome == "cancelled" {
 		status = "CANCELLED"
-		if campaignState == "PAUSED" {
+		if campaignState == "PAUSED" && !answered && !messageStarted {
 			status = "QUEUED"
+		} else if campaignState == "PAUSED" {
+			status = "QUARANTINED"
 		}
-	} else if retryableOutcome(outcome) && attemptNo < 3 &&
+	} else if retryableOutcome(outcome) && attemptCount < 3 &&
 		(campaignState == "RUNNING" || campaignState == "PAUSED") &&
 		!answered && !messageStarted {
 		status = "QUEUED"
@@ -99,7 +101,7 @@ func (s *Store) finishAttemptTx(
 	if status == "QUEUED" {
 		_, err = tx.Exec(ctx, `UPDATE campaign_recipients SET status=$2,
 			next_attempt_at=clock_timestamp()+($3 * interval '5 minutes')
-			WHERE id=$1`, campaignRecipientID, status, attemptNo)
+			WHERE id=$1`, campaignRecipientID, status, attemptCount)
 	} else {
 		_, err = tx.Exec(ctx, "UPDATE campaign_recipients SET status=$2 WHERE id=$1",
 			campaignRecipientID, status)

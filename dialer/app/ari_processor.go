@@ -36,9 +36,11 @@ func (p *ARIEventProcessor) Handle(
 	}
 	record, err := newARIJournalRecord(event, event.Key(raw))
 	if err != nil {
-		p.markFailed()
-		<-ctx.Done()
-		return ctx.Err()
+		p.metrics.ariEventsRejected.Add(1)
+		if p.log != nil {
+			p.log.Warn("unsafe ARI event ignored", "event_type", event.Type, "error", err)
+		}
+		return nil
 	}
 	entry, err := p.putUntilDurable(ctx, record)
 	if err != nil {

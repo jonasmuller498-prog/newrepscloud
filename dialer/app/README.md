@@ -28,9 +28,15 @@ from its schedule alone: an operator must explicitly start it after a separate
 approver approves the selected audio and caller ID. Suppression is checked at import,
 validation, queue claim, and immediately before ARI delivery.
 
+Recipient timezones are restricted to canonical IANA locations in the United States
+(including Alaska, Aleutian, Arizona, Hawaii, Indiana, Kentucky, and North Dakota
+variants). `UTC`, fixed offsets, non-US locations, and `Local` are rejected.
+
 Ambiguous ARI requests and unknown terminal events are quarantined. Only explicit
 busy, no-answer, and temporary outcomes retry, up to three attempts. Answered,
 message-started, invalid, forbidden, opt-out, and ambiguous outcomes do not retry.
+Pause is immediate: claimed work is released, ringing channels are terminated, and
+answered or message-started calls are quarantined instead of automatically retried.
 
 ## Configuration
 

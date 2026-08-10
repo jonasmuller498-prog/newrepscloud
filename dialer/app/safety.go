@@ -67,7 +67,7 @@ func (s *Store) CampaignSafetyBlocks(
 		return nil, err
 	}
 	if invalidTZ > 0 {
-		add("timezone_invalid", "Every recipient requires a valid IANA timezone.", invalidTZ)
+		add("timezone_invalid", "Every recipient requires an approved US IANA timezone.", invalidTZ)
 	}
 	if requireApproval && assetID != nil && callerID != nil {
 		var approved bool

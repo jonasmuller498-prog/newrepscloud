@@ -18,7 +18,7 @@ type QueuedAttempt struct {
 
 type queueCandidate struct {
 	ID, RecipientID, Timezone string
-	AttemptCount              int
+	ClaimCount                int
 	WindowStartSecs           float64
 	WindowEndSecs             float64
 	DatabaseNow               time.Time
@@ -69,14 +69,14 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 	if err != nil {
 		return nil, err
 	}
-	attemptNo := candidate.AttemptCount + 1
-	attemptID := attemptUUID(candidate.ID, attemptNo)
+	claimNo := candidate.ClaimCount + 1
+	attemptID := attemptUUID(candidate.ID, claimNo)
 	channelID := "dialer-" + strings.ReplaceAll(attemptID, "-", "")
 	tag, err := tx.Exec(ctx, `INSERT INTO call_attempts
 		(id,campaign_recipient_id,recipient_id,attempt_no,channel_id,slot_no,state)
 		VALUES($1,$2,$3,$4,$5,$6,'CLAIMED')
 		ON CONFLICT DO NOTHING`,
-		attemptID, candidate.ID, candidate.RecipientID, attemptNo, channelID, slot)
+		attemptID, candidate.ID, candidate.RecipientID, claimNo, channelID, slot)
 	if err == nil && tag.RowsAffected() == 0 {
 		return nil, nil
 	}
@@ -86,7 +86,7 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 	}
 	if err == nil {
 		_, err = tx.Exec(ctx, `UPDATE campaign_recipients SET status='ACTIVE',
-			attempt_count=$2 WHERE id=$1`, candidate.ID, attemptNo)
+			claim_count=$2 WHERE id=$1`, candidate.ID, claimNo)
 	}
 	if err == nil {
 		payload, _ := json.Marshal(map[string]string{"attempt_id": attemptID})
@@ -100,12 +100,12 @@ func (s *Store) AllocateAttempt(ctx context.Context) (*QueuedAttempt, error) {
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &QueuedAttempt{attemptID, channelID, candidate.ID, attemptNo, slot}, nil
+	return &QueuedAttempt{attemptID, channelID, candidate.ID, claimNo, slot}, nil
 }
 
 func claimCandidate(ctx context.Context, tx pgx.Tx) (queueCandidate, error) {
 	var c queueCandidate
-	err := tx.QueryRow(ctx, `SELECT cr.id,cr.recipient_id,cr.timezone,cr.attempt_count,
+	err := tx.QueryRow(ctx, `SELECT cr.id,cr.recipient_id,cr.timezone,cr.claim_count,
 		EXTRACT(EPOCH FROM c.window_start),EXTRACT(EPOCH FROM c.window_end),clock_timestamp(),
 		ma.storage_name,ma.sha256,ma.byte_size,ma.duration_ms
 		FROM campaign_recipients cr JOIN campaigns c ON c.id=cr.campaign_id
@@ -126,9 +126,10 @@ func claimCandidate(ctx context.Context, tx pgx.Tx) (queueCandidate, error) {
 		    ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED',
 		     'TERMINATING','UNCERTAIN'))
 		ORDER BY cr.next_attempt_at,cr.id FOR UPDATE OF cr SKIP LOCKED LIMIT 1`).
-		Scan(&c.ID, &c.RecipientID, &c.Timezone, &c.AttemptCount, &c.WindowStartSecs,
-			&c.WindowEndSecs, &c.DatabaseNow, &c.Media.StorageName, &c.Media.SHA256,
-			&c.Media.ByteSize, &c.Media.DurationMS)
+		Scan(&c.ID, &c.RecipientID, &c.Timezone, &c.ClaimCount,
+			&c.WindowStartSecs, &c.WindowEndSecs, &c.DatabaseNow,
+			&c.Media.StorageName, &c.Media.SHA256, &c.Media.ByteSize,
+			&c.Media.DurationMS)
 	return c, err
 }
 

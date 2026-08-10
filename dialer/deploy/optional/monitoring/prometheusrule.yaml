@@ -64,3 +64,11 @@ spec:
           annotations:
             summary: A DTMF opt-out was not persisted
             description: Stop dialing until the failed opt-out has been reconciled.
+        - alert: DialerRejectedARIEvent
+          expr: increase(dialer_ari_events_rejected_total{namespace="voice-dialer"}[5m]) > 0
+          for: 0m
+          labels:
+            severity: warning
+          annotations:
+            summary: The dialer rejected a state-changing ARI event
+            description: Check for unexpected channel IDs or an incompatible Asterisk event shape.

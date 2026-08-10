@@ -10,10 +10,17 @@ type fakeDeliveryStore struct {
 	permitted  bool
 	compensate bool
 	retryAt    time.Time
+	recovery   *OriginateRecovery
+	completed  OriginateResult
 }
 
 func (*fakeDeliveryStore) ClaimOutbox(context.Context) (*OutboxItem, error) { return nil, nil }
 func (*fakeDeliveryStore) ResetOutbox(context.Context, string) error        { return nil }
+func (s *fakeDeliveryStore) LoadOriginateRecovery(
+	context.Context, OutboxItem,
+) (*OriginateRecovery, error) {
+	return s.recovery, nil
+}
 func (s *fakeDeliveryStore) PrepareOriginate(
 	context.Context, OutboxItem,
 ) (OriginateCommand, bool, time.Time, error) {
@@ -23,8 +30,9 @@ func (s *fakeDeliveryStore) PrepareOriginate(
 	}, s.permitted, s.retryAt, nil
 }
 func (s *fakeDeliveryStore) CompleteOriginate(
-	context.Context, OutboxItem, OriginateResult,
+	_ context.Context, _ OutboxItem, result OriginateResult,
 ) (bool, error) {
+	s.completed = result
 	return s.compensate, nil
 }
 func (*fakeDeliveryStore) PreparePlay(context.Context, OutboxItem) (PlayCommand, error) {
@@ -44,8 +52,9 @@ func (*fakeDeliveryStore) CompleteHangup(
 func (*fakeDeliveryStore) DeferOutbox(context.Context, string, time.Time) error { return nil }
 
 type fakeARI struct {
-	originates, hangups int
-	fail                bool
+	originates, hangups, channelChecks int
+	fail                               bool
+	channelExists                      bool
 }
 
 func (f *fakeARI) Originate(context.Context, OriginateCommand) (OriginateResult, error) {
@@ -62,7 +71,10 @@ func (f *fakeARI) Hangup(context.Context, string) (OriginateResult, error) {
 	f.hangups++
 	return OriginateResult{Accepted: true}, nil
 }
-func (*fakeARI) ChannelExists(context.Context, string) (bool, error) { return false, nil }
+func (f *fakeARI) ChannelExists(context.Context, string) (bool, error) {
+	f.channelChecks++
+	return f.channelExists, nil
+}
 
 func TestCPSPermitIsRequiredAtDelivery(t *testing.T) {
 	store, ari := &fakeDeliveryStore{
@@ -112,5 +124,21 @@ func TestFailedSIPAttemptMetric(t *testing.T) {
 	if metrics.sipFailed.Load() != 1 || metrics.sipAccepted.Load() != 0 {
 		t.Fatalf("accepted=%d failed=%d",
 			metrics.sipAccepted.Load(), metrics.sipFailed.Load())
+	}
+}
+
+func TestOriginatingRecoveryChecksChannelWithoutRedial(t *testing.T) {
+	store := &fakeDeliveryStore{recovery: &OriginateRecovery{
+		ChannelID: "dialer-attempt", State: "ORIGINATING",
+	}}
+	ari := &fakeARI{channelExists: true}
+	originator := &Originator{store: store, client: ari, metrics: &Metrics{}}
+	if err := originator.processOriginate(
+		context.Background(), OutboxItem{Kind: "ARI_ORIGINATE"}); err != nil {
+		t.Fatal(err)
+	}
+	if ari.originates != 0 || ari.channelChecks != 1 || !store.completed.Accepted {
+		t.Fatalf("originates=%d checks=%d result=%+v",
+			ari.originates, ari.channelChecks, store.completed)
 	}
 }

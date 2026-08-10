@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -58,11 +59,19 @@ func run(log *slog.Logger) error {
 	}
 	reconciler := &Reconciler{store, ari, gate, log}
 	importer := &ImportWorker{store: store, log: log}
-	go scheduler.Run(root)
-	go originator.Run(root)
-	go consumer.Run(root)
-	go reconciler.Run(root)
-	go importer.Run(root)
+	var workers sync.WaitGroup
+	startWorker := func(run func(context.Context)) {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			run(root)
+		}()
+	}
+	startWorker(scheduler.Run)
+	startWorker(originator.Run)
+	startWorker(consumer.Run)
+	startWorker(reconciler.Run)
+	startWorker(importer.Run)
 	publicServer := &http.Server{
 		Addr: config.HTTPAddr, Handler: NewAPI(store, config, gate, metrics),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
@@ -91,12 +100,24 @@ func run(log *slog.Logger) error {
 			stop()
 		}
 	}
+	stop()
 	shutdown, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	publicErr := publicServer.Shutdown(shutdown)
 	metricsErr := metricsServer.Shutdown(shutdown)
+	workersDone := make(chan struct{})
+	go func() {
+		workers.Wait()
+		close(workersDone)
+	}()
+	var workerErr error
+	select {
+	case <-workersDone:
+	case <-shutdown.Done():
+		workerErr = shutdown.Err()
+	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	return errors.Join(publicErr, metricsErr)
+	return errors.Join(publicErr, metricsErr, workerErr)
 }

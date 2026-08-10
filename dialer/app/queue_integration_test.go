@@ -100,7 +100,7 @@ func seedQueue(t *testing.T, ctx context.Context, store *Store) (string, []strin
 		consentID, _ := newUUID()
 		crID, _ := newUUID()
 		_, err = store.pool.Exec(ctx, `INSERT INTO recipients
-			(id,phone_cipher,phone_hash,timezone) VALUES($1,$2,$3,'UTC')`,
+			(id,phone_cipher,phone_hash,timezone) VALUES($1,$2,$3,'America/New_York')`,
 			recipientID, []byte{byte(10 + i)}, []byte{byte(20 + i)})
 		if err == nil {
 			_, err = store.pool.Exec(ctx, `INSERT INTO consent_evidence
@@ -110,7 +110,8 @@ func seedQueue(t *testing.T, ctx context.Context, store *Store) (string, []strin
 		if err == nil {
 			_, err = store.pool.Exec(ctx, `INSERT INTO campaign_recipients
 				(id,campaign_id,recipient_id,consent_evidence_id,timezone)
-				VALUES($1,$2,$3,$4,'UTC')`, crID, campaignID, recipientID, consentID)
+				VALUES($1,$2,$3,$4,'America/New_York')`,
+				crID, campaignID, recipientID, consentID)
 		}
 		if err != nil {
 			t.Fatal(err)
@@ -136,7 +137,8 @@ func seedQueue(t *testing.T, ctx context.Context, store *Store) (string, []strin
 	if err == nil {
 		_, err = store.pool.Exec(ctx, `INSERT INTO campaign_recipients
 			(id,campaign_id,recipient_id,consent_evidence_id,timezone)
-			VALUES($1,$2,$3,$4,'UTC')`, sharedCR, secondCampaign, firstRecipient, firstConsent)
+			VALUES($1,$2,$3,$4,'America/New_York')`,
+			sharedCR, secondCampaign, firstRecipient, firstConsent)
 	}
 	if err != nil {
 		t.Fatal(err)

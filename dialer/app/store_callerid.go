@@ -44,7 +44,10 @@ func (s *Store) RegisterCallerID(
 	err = tx.QueryRow(ctx, `INSERT INTO caller_ids
 		(id,phone_cipher,phone_hash,authorization_reference,authorized_at,created_by)
 		VALUES($1,$2,$3,$4,$5,$6)
-		ON CONFLICT (phone_hash) DO UPDATE SET phone_hash=EXCLUDED.phone_hash
+		ON CONFLICT (phone_hash) DO UPDATE SET
+		  phone_cipher=EXCLUDED.phone_cipher,
+		  authorization_reference=EXCLUDED.authorization_reference,
+		  authorized_at=EXCLUDED.authorized_at
 		RETURNING id,authorized_at,created_at,authorization_reference`,
 		id, ciphertext, s.protector.LookupHash(normalized), reference, authorizedAt, actor).
 		Scan(&view.ID, &view.AuthorizedAt, &view.CreatedAt, &view.Authorization)

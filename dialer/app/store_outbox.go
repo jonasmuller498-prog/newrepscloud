@@ -11,6 +11,10 @@ type OutboxItem struct {
 	ID, AttemptID, Kind string
 }
 
+type OriginateRecovery struct {
+	ChannelID, State string
+}
+
 func (s *Store) ClaimOutbox(ctx context.Context) (*OutboxItem, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -23,7 +27,10 @@ func (s *Store) ClaimOutbox(ctx context.Context) (*OutboxItem, error) {
 		JOIN campaign_recipients cr ON cr.id=a.campaign_recipient_id
 		JOIN campaigns c ON c.id=cr.campaign_id
 		WHERE o.state='PENDING' AND o.available_at<=clock_timestamp() AND (
-		  (o.kind='ARI_ORIGINATE' AND a.state='CLAIMED' AND c.state='RUNNING') OR
+		  (o.kind='ARI_ORIGINATE' AND (
+		    (a.state='CLAIMED' AND c.state='RUNNING') OR a.state IN
+		    ('ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED',
+		     'TERMINATING','UNCERTAIN'))) OR
 		  (o.kind='ARI_PLAY' AND a.state='ANSWERED' AND a.pending_outcome IS NULL) OR
 		  (o.kind='ARI_HANGUP' AND a.state IN ('TERMINATING','UNCERTAIN'))
 		)
@@ -41,6 +48,27 @@ func (s *Store) ClaimOutbox(ctx context.Context) (*OutboxItem, error) {
 		return nil, err
 	}
 	return &item, tx.Commit(ctx)
+}
+
+func (s *Store) LoadOriginateRecovery(
+	ctx context.Context, item OutboxItem,
+) (*OriginateRecovery, error) {
+	var recovery OriginateRecovery
+	err := s.pool.QueryRow(ctx, `SELECT a.channel_id,a.state FROM outbox o
+		JOIN call_attempts a ON a.id=o.aggregate_id
+		WHERE o.id=$1 AND o.state='PROCESSING' AND o.kind='ARI_ORIGINATE'
+		  AND a.id=$2`, item.ID, item.AttemptID).
+		Scan(&recovery.ChannelID, &recovery.State)
+	if err != nil {
+		return nil, dbError(err)
+	}
+	if recovery.State == "CLAIMED" {
+		return nil, nil
+	}
+	if !activeAttemptStates[recovery.State] {
+		return nil, errConflict
+	}
+	return &recovery, nil
 }
 
 func (s *Store) ResetOutbox(ctx context.Context, id string) error {

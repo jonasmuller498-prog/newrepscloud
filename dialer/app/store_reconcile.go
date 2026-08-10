@@ -25,9 +25,26 @@ func (s *Store) ReconcileDatabase(ctx context.Context) error {
 		available_at=now() FROM call_attempts a WHERE o.aggregate_id=a.id
 			AND o.state='PROCESSING' AND (o.processing_at IS NULL
 			  OR o.processing_at<now()-interval '2 minutes')
-		AND ((o.kind='ARI_ORIGINATE' AND a.state='CLAIMED')
+		AND ((o.kind='ARI_ORIGINATE' AND a.state IN
+		      ('CLAIMED','ORIGINATING','RINGING','ANSWERED','MESSAGE_STARTED',
+		       'TERMINATING','UNCERTAIN'))
 		  OR (o.kind='ARI_PLAY' AND a.state='ANSWERED')
 		  OR (o.kind='ARI_HANGUP' AND a.state IN ('TERMINATING','UNCERTAIN')))`)
+	}
+	if err == nil {
+		_, err = tx.Exec(ctx, `WITH stale AS (
+			UPDATE call_attempts a SET state='CANCELLED',outcome='claim_abandoned',
+			  ended_at=now(),updated_at=now()
+			FROM campaign_recipients cr JOIN campaigns c ON c.id=cr.campaign_id
+			WHERE a.campaign_recipient_id=cr.id AND a.state='CLAIMED'
+			  AND a.updated_at<now()-interval '2 minutes'
+			  AND NOT EXISTS(SELECT 1 FROM outbox o WHERE o.aggregate_id=a.id
+			    AND o.kind='ARI_ORIGINATE' AND o.state IN ('PENDING','PROCESSING'))
+			RETURNING a.campaign_recipient_id,c.state
+		)
+		UPDATE campaign_recipients cr SET status=CASE
+		  WHEN s.state IN ('RUNNING','PAUSED') THEN 'QUEUED' ELSE 'CANCELLED' END
+		FROM stale s WHERE cr.id=s.campaign_recipient_id`)
 	}
 	if err == nil {
 		_, err = tx.Exec(ctx, `WITH stopped AS (

@@ -29,12 +29,14 @@ func TestRequiredSafetyMetricsAreExported(t *testing.T) {
 	metrics.schedulerEnabled.Store(true)
 	metrics.cpsThrottled.Store(2)
 	metrics.optOutPersistenceFailures.Store(1)
+	metrics.ariEventsRejected.Store(1)
 	metrics.write(response, &DependencyGate{}, 4, 3, 1)
 	body := response.Body.String()
 	for _, name := range []string{
 		"dialer_scheduler_enabled", "dialer_slot_mismatch",
 		"dialer_cps_throttled_total", "dialer_sip_attempts_total",
 		"dialer_opt_out_persistence_failures_total",
+		"dialer_ari_events_rejected_total",
 	} {
 		if !strings.Contains(body, name) {
 			t.Fatalf("missing required metric %q in %q", name, body)

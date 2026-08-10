@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	errInvalidTimezone = errors.New("invalid IANA timezone")
+	errInvalidTimezone = errors.New("invalid US IANA timezone")
 	errNotFound        = errors.New("not found")
 	errConflict        = errors.New("state conflict")
 	errForbidden       = errors.New("forbidden")

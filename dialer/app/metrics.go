@@ -13,6 +13,7 @@ type Metrics struct {
 	cpsThrottled              atomic.Uint64
 	optOutPersistenceFailures atomic.Uint64
 	ariEvents                 atomic.Uint64
+	ariEventsRejected         atomic.Uint64
 	quarantined               atomic.Uint64
 	leader                    atomic.Bool
 	schedulerEnabled          atomic.Bool
@@ -47,6 +48,7 @@ func (m *Metrics) write(
 	writeMetric(w, "dialer_opt_out_persistence_failures_total",
 		m.optOutPersistenceFailures.Load())
 	writeMetric(w, "dialer_ari_events_total", m.ariEvents.Load())
+	writeMetric(w, "dialer_ari_events_rejected_total", m.ariEventsRejected.Load())
 	writeMetric(w, "dialer_quarantined_total", m.quarantined.Load())
 	writeGauge(w, "dialer_scheduler_leader", boolFloat(m.leader.Load()))
 	writeGauge(w, "dialer_scheduler_enabled", boolFloat(m.schedulerEnabled.Load()))

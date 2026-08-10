@@ -175,6 +175,7 @@ class DeploymentTests(unittest.TestCase):
             "dialer_scheduler_enabled", "dialer_slot_mismatch",
             "dialer_cps_throttled_total", "dialer_sip_attempts_total",
             "dialer_opt_out_persistence_failures_total",
+            "dialer_ari_events_rejected_total",
         }
         for name in names:
             self.assertIn(name, metrics)
