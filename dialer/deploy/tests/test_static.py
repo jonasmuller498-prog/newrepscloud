@@ -82,7 +82,9 @@ class DeploymentTests(unittest.TestCase):
         statefulset = read("base/engine/statefulset.yaml")
         self.assertIn("static-debian12:nonroot@", statefulset)
         self.assertIn("sizeLimit: 1Gi", statefulset)
-        self.assertIn("GOMODCACHE", read("base/engine/statefulset-init.yaml"))
+        init = read("base/engine/statefulset-init.yaml")
+        self.assertIn("golang:1.26.5-bookworm@", init)
+        self.assertIn("GOMODCACHE", init)
         self.assertIn("immutable: true", read("overlays/production/kustomization.yaml"))
 
     def test_direct_ari_and_shared_media_are_coherent(self):
