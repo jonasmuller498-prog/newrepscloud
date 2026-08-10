@@ -26,10 +26,8 @@ RUNTIME = {
         "https://github.com/jonasmuller498-prog/newrepscloud.git",
 }
 
-
 def fail(message):
     raise ValueError(message)
-
 
 def documents(path):
     raw = path.read_text(encoding="utf-8")
@@ -148,6 +146,9 @@ def check(items):
     containers = {item["name"]: item for item in pod["containers"]}
     if set(containers) != {"app", "asterisk"}:
         fail("engine must retain the app and local Asterisk containers")
+    app_ports = {item["name"]: item["containerPort"] for item in containers["app"]["ports"]}
+    if app_ports != {"api": 8080, "metrics": 9090}:
+        fail("app must retain API and metrics container ports")
     if containers["asterisk"].get("ports"):
         fail("Asterisk container advertises a SIP port")
     app_mounts = {item["mountPath"]: item["name"] for item in containers["app"]["volumeMounts"]}
