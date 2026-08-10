@@ -14,10 +14,12 @@ func configLookup(values map[string]string) func(string) (string, bool) {
 
 func validConfigValues() map[string]string {
 	return map[string]string{
-		"DATABASE_URL":       "postgres://dialer:test@localhost/dialer",
-		"OPERATOR_API_TOKEN": "operator-token",
-		"APPROVER_API_TOKEN": "approver-token",
-		"HMAC_KEY":           strings.Repeat("k", 32),
+		"DATABASE_URL":         "postgres://dialer:test@localhost/dialer",
+		"OPERATOR_API_TOKEN":   "operator-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"APPROVER_API_TOKEN":   "approver-9876543210-zyxwvutsrqponmlkjihgfedcba",
+		"PHONE_HASH_KEY":       "phone-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"FIELD_ENCRYPTION_KEY": "field-9876543210-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+		"AUDIT_HMAC_KEY":       "audit-ABCDEF0123456789-ghijklmnopqrstuvwxyz",
 	}
 }
 
@@ -42,9 +44,12 @@ func TestConfigValidation(t *testing.T) {
 		{"concurrency high", "MAX_CONCURRENCY", "101"},
 		{"concurrency zero", "MAX_CONCURRENCY", "0"},
 		{"negative cps", "CPS", "-1"},
+		{"not a number cps", "CPS", "NaN"},
+		{"infinite cps", "CPS", "+Inf"},
 		{"invalid hours", "CALLING_HOURS_START", "22:00"},
-		{"short key", "HMAC_KEY", "short"},
-		{"same role token", "APPROVER_API_TOKEN", "operator-token"},
+		{"short key", "PHONE_HASH_KEY", "short"},
+		{"low entropy key", "AUDIT_HMAC_KEY", strings.Repeat("k", 64)},
+		{"short operator token", "OPERATOR_API_TOKEN", "operator-token"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -66,25 +71,25 @@ func TestEnabledConfigRequiresARI(t *testing.T) {
 	}
 	values["ARI_URL"], values["ARI_APP"] = "https://ari.example", "dialer"
 	values["ARI_USER"], values["ARI_PASSWORD"] = "user", "password"
+	values["ARI_ENDPOINT"] = "carrier"
 	if _, err := loadConfig(configLookup(values)); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestConfigAliases(t *testing.T) {
-	values := map[string]string{
-		"DB_URL":          "postgres://localhost/dialer",
-		"OPERATOR_TOKEN":  "operator",
-		"APPROVER_TOKEN":  "approver",
-		"HMAC_KEY":        strings.Repeat("k", 32),
-		"MAX_CONCURRENCY": "1",
+func TestLegacySecretAliasesAreRejected(t *testing.T) {
+	values := validConfigValues()
+	delete(values, "PHONE_HASH_KEY")
+	values["HMAC_KEY"] = "legacy-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	if _, err := loadConfig(configLookup(values)); err == nil {
+		t.Fatal("legacy shared key unexpectedly accepted")
 	}
-	config, err := loadConfig(configLookup(values))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.DatabaseURL != values["DB_URL"] ||
-		config.OperatorToken != "operator" || config.ApproverToken != "approver" {
-		t.Fatalf("aliases not loaded: %+v", config)
+}
+
+func TestRoleTokensMustDiffer(t *testing.T) {
+	values := validConfigValues()
+	values["APPROVER_API_TOKEN"] = values["OPERATOR_API_TOKEN"]
+	if _, err := loadConfig(configLookup(values)); err == nil {
+		t.Fatal("identical role tokens accepted")
 	}
 }

@@ -2,60 +2,15 @@ package main
 
 import (
 	"context"
-	"net/url"
-	"os"
-	"strings"
+	"crypto/sha256"
+	"encoding/hex"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestConcurrentSlotAllocationAndIdempotency(t *testing.T) {
-	databaseURL := os.Getenv("TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	admin, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	suffix, _ := newUUID()
-	schema := "dialer_test_" + strings.ReplaceAll(suffix, "-", "")
-	if _, err = admin.Exec(ctx, "CREATE SCHEMA "+pgx.Identifier{schema}.Sanitize()); err != nil {
-		t.Fatal(err)
-	}
-	parsed, err := url.Parse(databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := parsed.Query()
-	query.Set("search_path", schema)
-	parsed.RawQuery = query.Encode()
-	config := Config{
-		DatabaseURL: parsed.String(), MediaDir: t.TempDir(), MaxConcurrency: 2,
-		CPS: 100000, WindowStart: 8 * time.Hour, WindowEnd: 21 * time.Hour,
-		HMACKey: []byte(strings.Repeat("k", 32)),
-	}
-	protector, _ := NewProtector(config.HMACKey)
-	store, err := openStore(ctx, config, protector)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		store.Close()
-		_, _ = admin.Exec(context.Background(),
-			"DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE")
-		admin.Close()
-	})
-	if err = runMigrations(ctx, store.pool); err != nil {
-		t.Fatal(err)
-	}
+	store, ctx := integrationStore(t, 2)
 	campaignID, recipientIDs := seedQueue(t, ctx, store)
 	start := make(chan struct{})
 	var accepted atomic.Int32
@@ -79,7 +34,7 @@ func TestConcurrentSlotAllocationAndIdempotency(t *testing.T) {
 		t.Fatalf("allocated %d attempts with two fixed slots", got)
 	}
 	var attempts, occupied, maxPerRecipient int
-	err = store.pool.QueryRow(ctx, `SELECT
+	err := store.pool.QueryRow(ctx, `SELECT
 		(SELECT count(*) FROM call_attempts),
 		(SELECT count(*) FROM dialer_slots WHERE attempt_id IS NOT NULL),
 		(SELECT COALESCE(max(n),0) FROM (SELECT count(*) n FROM call_attempts
@@ -105,14 +60,20 @@ func TestConcurrentSlotAllocationAndIdempotency(t *testing.T) {
 
 func seedQueue(t *testing.T, ctx context.Context, store *Store) (string, []string) {
 	t.Helper()
+	media := testWAV(16000, 1, 8000, 16)
+	sum := sha256.Sum256(media)
+	storage := hex.EncodeToString(sum[:]) + ".wav"
+	if err := writeMediaFile(store.config.MediaDir, storage, media); err != nil {
+		t.Fatal(err)
+	}
 	assetID, _ := newUUID()
 	callerID, _ := newUUID()
 	campaignID, _ := newUUID()
 	approvalID, _ := newUUID()
 	_, err := store.pool.Exec(ctx, `INSERT INTO message_assets
 		(id,sha256,storage_name,byte_size,duration_ms,format,created_by)
-		VALUES($1,$2,'asset.wav',16000,1000,'pcm_s16le_mono_8000','test')`,
-		assetID, []byte{1})
+		VALUES($1,$2,$3,$4,1000,'pcm_s16le_mono_8000','test')`,
+		assetID, sum[:], storage, len(media))
 	if err == nil {
 		_, err = store.pool.Exec(ctx, `INSERT INTO caller_ids
 			(id,phone_cipher,phone_hash,authorization_reference,authorized_at,created_by)

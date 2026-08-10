@@ -3,12 +3,14 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
 func TestAPIRoleAuthorization(t *testing.T) {
-	protector, err := NewProtector([]byte(strings.Repeat("k", 32)))
+	phoneKey := []byte("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef")
+	fieldKey := []byte("abcdef0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	auditKey := []byte("9876543210abcdefghijklmnopqrstuvwxyzABCDEF")
+	protector, err := NewProtector(phoneKey, fieldKey, auditKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,5 +67,14 @@ func TestSecurityHeaders(t *testing.T) {
 func TestTokenComparison(t *testing.T) {
 	if !secureTokenEqual("same", "same") || secureTokenEqual("same", "different") {
 		t.Fatal("constant-time token comparison returned the wrong result")
+	}
+}
+
+func TestPublicMuxDoesNotExposeMetrics(t *testing.T) {
+	handler := NewAPI(nil, Config{}, &DependencyGate{}, &Metrics{})
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("public /metrics status=%d", response.Code)
 	}
 }
