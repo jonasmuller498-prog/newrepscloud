@@ -165,8 +165,8 @@ func main() {
 		"@@ARI_PASSWORD@@": ariPassword,
 		"@@TRUNK_BLOCK@@":  trunkBlock(enabledText == "true"),
 	}
-	if publicIP := os.Getenv("DIALER_PUBLIC_IPV4"); publicIP != "" {
-		replacements["@@DIALER_PUBLIC_IPV4@@"] = publicIP
+	if os.Getenv("DIALER_PUBLIC_IPV4") != "" {
+		replacements["@@DIALER_PUBLIC_IPV4@@"] = required("DIALER_PUBLIC_IPV4")
 	}
 	if err := os.MkdirAll("/rendered", 0750); err != nil {
 		panic(err)
