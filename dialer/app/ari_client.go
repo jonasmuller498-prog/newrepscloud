@@ -53,13 +53,19 @@ func NewARIClient(config Config) *ARIClient {
 func (c *ARIClient) Originate(ctx context.Context, cmd OriginateCommand) (OriginateResult, error) {
 	phone, err := normalizeE164(cmd.Phone)
 	if err != nil {
-		return OriginateResult{Outcome: "invalid"}, errors.New("invalid originate command")
+		return OriginateResult{Outcome: "invalid"},
+			fmt.Errorf("invalid originate recipient: %w", err)
+	}
+	callerID, err := normalizeE164(cmd.CallerID)
+	if err != nil {
+		return OriginateResult{Outcome: "invalid"},
+			fmt.Errorf("invalid originate caller ID: %w", err)
 	}
 	query := url.Values{}
 	query.Set("endpoint", "PJSIP/"+phone+"@"+c.config.ARIEndpoint)
 	query.Set("app", c.config.ARIApp)
 	query.Set("appArgs", cmd.AttemptID)
-	query.Set("callerId", cmd.CallerID)
+	query.Set("callerId", callerID)
 	query.Set("channelId", cmd.ChannelID)
 	body, _ := json.Marshal(map[string]any{"variables": map[string]string{
 		"DIALER_ATTEMPT_ID": cmd.AttemptID,

@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/nyaruka/phonenumbers v1.8.1
 )
 
 require (
@@ -13,4 +14,5 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )

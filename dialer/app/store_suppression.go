@@ -18,8 +18,11 @@ type SuppressionView struct {
 
 func (s *Store) SuppressPhone(ctx context.Context, phone, reason, source, actor string) error {
 	normalized, err := normalizeE164(phone)
+	if err != nil {
+		return err
+	}
 	reason, source = strings.TrimSpace(reason), strings.TrimSpace(source)
-	if err != nil || reason == "" || source == "" || len(reason) > 200 || len(source) > 100 {
+	if reason == "" || source == "" || len(reason) > 200 || len(source) > 100 {
 		return errSafetyBlocked
 	}
 	ciphertext, err := s.protector.Encrypt(normalized)

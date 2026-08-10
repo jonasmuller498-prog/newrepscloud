@@ -20,8 +20,11 @@ func (s *Store) RegisterCallerID(
 ) (CallerIDView, error) {
 	var view CallerIDView
 	normalized, err := normalizeE164(phone)
+	if err != nil {
+		return view, err
+	}
 	reference = strings.TrimSpace(reference)
-	if err != nil || reference == "" || len(reference) > 200 ||
+	if reference == "" || len(reference) > 200 ||
 		authorizedAt.IsZero() || authorizedAt.After(time.Now().Add(5*time.Minute)) {
 		return view, errSafetyBlocked
 	}
