@@ -9,6 +9,9 @@ ASTERISK = ROOT / "base/asterisk"
 REQUIRED_MODULES = (
     "pbx_config.so",
     "app_dial.so",
+    "bridge_simple.so",
+    "func_hangupcause.so",
+    "func_strings.so",
     "res_sorcery_config.so",
     "res_sorcery_memory.so",
     "res_sorcery_astdb.so",
@@ -141,12 +144,16 @@ class AsteriskHardeningTests(unittest.TestCase):
 
     def test_outbound_dialplan_fails_over_sequentially(self):
         body = read("base/asterisk/extensions.conf")
-        primary = "Dial(PJSIP/${EXTEN}@outbound-primary,45)"
-        secondary = "Dial(PJSIP/${EXTEN}@outbound-secondary,45)"
+        primary = "PJSIP_DIAL_CONTACTS(outbound-primary,outbound-primary-aor"
+        secondary = "PJSIP_DIAL_CONTACTS(outbound-secondary,outbound-secondary-aor"
         self.assertLess(body.index(primary), body.index(secondary))
-        self.assertIn('"${DIALSTATUS}"="CONGESTION"', body)
-        self.assertIn('"${DIALSTATUS}"="CHANUNAVAIL"', body)
-        self.assertNotIn(f"{primary}&", body)
+        self.assertIn("HANGUPCAUSE(${PRIMARY_CHANNEL},tech)", body)
+        self.assertIn('^SIP (429|480|5[0-9][0-9])($| )', body)
+        self.assertIn("HangupCauseClear()", body)
+        self.assertIn("Hangup(41)", body)
+        self.assertNotIn("DIALSTATUS", body)
+        self.assertNotIn("408|", body)
+        self.assertNotIn("&", body)
 
     def test_asterisk_has_no_broad_state_mount(self):
         body = "\n".join(path.read_text() for path in ROOT.rglob("*.yaml"))
@@ -165,6 +172,7 @@ class AsteriskHardeningTests(unittest.TestCase):
         self.assertIn("aors=outbound-secondary-aor", body)
         self.assertNotIn("aors=outbound-primary,outbound-secondary", body)
         self.assertEqual(body.count("max_contacts=1"), 2)
+        self.assertEqual(body.count("qualify_2xx_only=yes"), 2)
         self.assertIn('signalTarget("TRUNK_SIGNAL_CIDR_PRIMARY")', body)
         self.assertIn('signalTarget("TRUNK_SIGNAL_CIDR_SECONDARY")', body)
         self.assertIn('replacements["@@DIALER_PUBLIC_IPV4@@"]', body)

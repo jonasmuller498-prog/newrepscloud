@@ -29,6 +29,7 @@ func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
 		"[outbound-secondary](outbound-template)",
 		"aors=outbound-secondary-aor",
 		"media_encryption=sdes",
+		"qualify_2xx_only=yes",
 	}
 	for _, value := range required {
 		if !strings.Contains(body, value) {
@@ -37,6 +38,9 @@ func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
 	}
 	if strings.Count(body, "max_contacts=1") != 2 {
 		t.Fatal("each carrier AOR must be limited to one contact")
+	}
+	if strings.Count(body, "qualify_2xx_only=yes") != 2 {
+		t.Fatal("both carrier contacts must require successful OPTIONS")
 	}
 	if strings.Contains(body, "aors=outbound-primary,outbound-secondary") {
 		t.Fatal("both SBCs were assigned to one endpoint")

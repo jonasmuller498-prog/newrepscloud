@@ -11,12 +11,10 @@ import (
 	"strings"
 )
 
-var (
-	hex64RE = regexp.MustCompile(`^[A-Fa-f0-9]{64}$`)
-	nameRE  = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,64}$`)
-	uriRE   = regexp.MustCompile(`^sip:([A-Za-z0-9+_.%-]+@)?[A-Za-z0-9.-]+:[0-9]{2,5}$`)
-	tokenRE = regexp.MustCompile(`@@[A-Z0-9_]+@@`)
-)
+var hex64RE = regexp.MustCompile(`^[A-Fa-f0-9]{64}$`)
+var nameRE = regexp.MustCompile(`^[A-Za-z0-9_.-]{3,64}$`)
+var uriRE = regexp.MustCompile(`^sip:([A-Za-z0-9+_.%-]+@)?[A-Za-z0-9.-]+:[0-9]{2,5}$`)
+var tokenRE = regexp.MustCompile(`@@[A-Z0-9_]+@@`)
 
 func required(name string) string {
 	value, ok := os.LookupEnv(name)
@@ -79,15 +77,12 @@ func trunkBlock(enabled bool) string {
 	} else if mediaEncryption != "sdes" {
 		panic("DIALER_TRUNK_MEDIA_ENCRYPTION must be exactly none or sdes")
 	}
-	uris := []string{required("DIALER_TRUNK_SIP_URI_PRIMARY"),
-		required("DIALER_TRUNK_SIP_URI_SECONDARY")}
+	uris := []string{required("DIALER_TRUNK_SIP_URI_PRIMARY"), required("DIALER_TRUNK_SIP_URI_SECONDARY")}
 	if uris[0] == uris[1] {
 		panic("outbound SBC URIs must be distinct")
 	}
-	signals := []netip.Addr{
-		signalTarget("TRUNK_SIGNAL_CIDR_PRIMARY"),
-		signalTarget("TRUNK_SIGNAL_CIDR_SECONDARY"),
-	}
+	signals := []netip.Addr{signalTarget("TRUNK_SIGNAL_CIDR_PRIMARY"),
+		signalTarget("TRUNK_SIGNAL_CIDR_SECONDARY")}
 	for index, uri := range uris {
 		if sipTarget(uri) != signals[index] {
 			panic("each outbound SBC URI must match its paired signaling /32")
@@ -113,6 +108,7 @@ type=aor
 contact=%s
 qualify_timeout=3.0
 qualify_frequency=30
+qualify_2xx_only=yes
 max_contacts=1
 
 [outbound-secondary-aor]
@@ -120,6 +116,7 @@ type=aor
 contact=%s
 qualify_timeout=3.0
 qualify_frequency=30
+qualify_2xx_only=yes
 max_contacts=1
 
 [outbound-template](!)

@@ -48,8 +48,9 @@ variables named in the app contract. Defaults are `DIALING_ENABLED=false`,
 
 `ARI_DIAL_CONTEXT` is the plain context name `dialer-outbound`; the app
 originates `Local/<E164>@dialer-outbound/n`. The internal dialplan tries the
-primary PJSIP endpoint first and advances to the secondary only for
-`CONGESTION` or `CHANUNAVAIL`, never in parallel. The answered Local channel
+primary PJSIP endpoint first and advances sequentially only when it is qualified
+unreachable or returns SIP `429`, `480`, or `5xx`. It never retries ambiguous
+`408`, authentication, addressing, codec, busy, or no-answer failures. The answered Local channel
 enters Stasis and plays `sound:campaigns/<sha>` through ARI. Uploaded SHA-named
 WAV files are mode `0640` on the shared media PVC;
 the aligned Asterisk process reads them at

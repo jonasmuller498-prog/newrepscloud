@@ -36,9 +36,10 @@ registration section accepts inbound campaign traffic.
 - The two `/32`s model the assigned outbound termination pair, not the separate
   inbound-origination source list. More signaling peers or media ranges require
   a manifest/model change before enablement; never widen a CIDR as a shortcut.
-- Asterisk qualifies both SBCs every 30 seconds. The internal dialplan retries
-  the secondary sequentially only for `CONGESTION` or `CHANUNAVAIL`; it never
-  forks duplicate calls. Verify outage and temporary-response paths in pilot.
+- Asterisk qualifies both SBCs every 30 seconds and accepts only `2xx` OPTIONS.
+  The dialplan retries the secondary only for an unreachable primary or explicit
+  SIP `429`, `480`, or `5xx`; ambiguous `408` and permanent failures are terminal.
+  It never forks duplicate calls. Verify every response class in pilot.
 
 The app and Asterisk run as UID/GID 1000 with pod `fsGroup: 1000`. The app
 writes the Longhorn media PVC at `/media`; Asterisk mounts the same claim
