@@ -87,7 +87,9 @@ Images include tags for review and manifest-list digests for immutability.
 Re-resolve and review digests during planned upgrades. The Go build disables
 CGO, toolchain auto-download, mutable module edits, and credential prompts.
 Grant no service-account token, Linux capability, privilege escalation, or
-root UID. The namespace enforces the restricted Pod Security profile.
+root UID. The namespace enforces `baseline` so cert-manager's HTTP-01 solver can
+renew TLS certificates, while auditing and warning at `restricted`; every
+dialer-owned workload still declares restricted-compatible security contexts.
 
 Production validation refuses `DIALING_ENABLED=true` unless CPS is positive,
 the exact trunk is enabled, public carrier CIDRs are supplied, and an external

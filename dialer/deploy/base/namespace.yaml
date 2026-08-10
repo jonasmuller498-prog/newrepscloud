@@ -4,7 +4,7 @@ metadata:
   name: voice-dialer
   labels:
     kubernetes.io/metadata.name: voice-dialer
-    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
