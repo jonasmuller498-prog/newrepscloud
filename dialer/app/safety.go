@@ -38,8 +38,11 @@ func (s *Store) CampaignSafetyBlocks(
 	}
 	if assetID == nil || storage == nil {
 		add("audio_missing", "A validated WAV message asset is required.", 0)
-	} else if _, err := os.Stat(filepath.Join(s.config.MediaDir, filepath.Base(*storage))); err != nil {
-		add("audio_unavailable", "The approved message asset is unavailable.", 0)
+	} else {
+		info, statErr := os.Stat(filepath.Join(s.config.MediaDir, filepath.Base(*storage)))
+		if statErr != nil || !info.Mode().IsRegular() {
+			add("audio_unavailable", "The approved message asset is unavailable.", 0)
+		}
 	}
 	if callerID == nil || authorized == nil || authorized.After(now.Add(5*time.Minute)) {
 		add("caller_id_unauthorized", "An authorized caller ID is required.", 0)

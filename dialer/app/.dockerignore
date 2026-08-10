@@ -3,4 +3,5 @@
 *.log
 coverage.out
 dialer
+compliance-dialer
 tmp/

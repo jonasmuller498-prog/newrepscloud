@@ -1,7 +1,7 @@
 .PHONY: build test test-integration vet fmt-check
 
 build:
-	go build ./...
+	go build -trimpath -o compliance-dialer .
 
 test:
 	go test ./...

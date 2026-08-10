@@ -47,6 +47,23 @@ func (c *ARIConsumer) readEvents(ctx context.Context, conn *websocket.Conn) {
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	})
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(25 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				if conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)) != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
 	for ctx.Err() == nil {
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
