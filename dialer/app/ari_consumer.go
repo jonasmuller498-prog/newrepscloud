@@ -10,36 +10,58 @@ import (
 )
 
 type ARIConsumer struct {
-	store   *Store
-	client  *ARIClient
-	gate    *DependencyGate
-	metrics *Metrics
-	log     *slog.Logger
+	store     ariEventStore
+	client    *ARIClient
+	processor *ARIEventProcessor
+	config    Config
+	gate      *DependencyGate
+	log       *slog.Logger
 }
 
 func (c *ARIConsumer) Run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
-		if !c.store.config.DialingEnabled {
+		if !c.config.DialingEnabled {
 			c.gate.ariConnected.Store(false)
+			c.gate.journalReady.Store(false)
 			waitContext(ctx, time.Second)
+			continue
+		}
+		c.gate.ariConnected.Store(false)
+		c.gate.journalReady.Store(false)
+		if err := c.processor.journal.Probe(); err != nil {
+			c.log.Error("ARI journal unavailable", "error", err)
+			waitContext(ctx, backoff)
+			backoff = min(backoff*2, 15*time.Second)
+			continue
+		}
+		if err := c.processor.Replay(ctx); err != nil {
+			if ctx.Err() == nil {
+				c.log.Error("ARI journal replay blocked", "error", err)
+			}
+			waitContext(ctx, backoff)
+			backoff = min(backoff*2, 15*time.Second)
 			continue
 		}
 		conn, err := c.client.ConnectEvents(ctx)
 		if err != nil {
-			c.gate.ariConnected.Store(false)
-			c.markDisconnected(ctx)
+			_ = c.markDisconnected(ctx)
 			c.log.Warn("ARI event connection unavailable", "error", err)
 			waitContext(ctx, backoff)
 			backoff = min(backoff*2, 15*time.Second)
 			continue
 		}
 		backoff = time.Second
-		c.markDisconnected(ctx)
+		if err = c.markDisconnected(ctx); err != nil {
+			_ = conn.Close()
+			waitContext(ctx, backoff)
+			continue
+		}
+		c.gate.journalReady.Store(true)
 		c.gate.ariConnected.Store(true)
 		c.readEvents(ctx, conn)
 		c.gate.ariConnected.Store(false)
-		c.markDisconnected(ctx)
+		_ = c.markDisconnected(ctx)
 		_ = conn.Close()
 	}
 }
@@ -81,41 +103,21 @@ func (c *ARIConsumer) readEvents(ctx context.Context, conn *websocket.Conn) {
 			c.log.Warn("invalid ARI event JSON")
 			continue
 		}
-		if err = c.handleEvent(ctx, event, raw); err != nil && !errors.Is(err, errNotFound) {
-			c.log.Error("ARI event persistence failed", "event_type", event.Type, "error", err)
+		if err = c.processor.Handle(ctx, event, raw); err != nil {
+			if ctx.Err() == nil && !errors.Is(err, errARIReconnect) {
+				c.log.Error("ARI event handling stopped", "event_type", event.Type, "error", err)
+			}
+			return
 		}
 	}
 }
 
-func (c *ARIConsumer) handleEvent(ctx context.Context, event ARIEvent, raw []byte) error {
-	eventCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
-	defer cancel()
-	attemptID, inserted, err := c.store.ApplyARIEvent(eventCtx, event, raw)
-	if err != nil {
-		return err
-	}
-	if inserted {
-		c.metrics.ariEvents.Add(1)
-	}
-	if inserted && (event.Type == "PlaybackFinished" ||
-		(event.Type == "ChannelDtmfReceived" && event.Digit == "9")) {
-		pending, pendingErr := c.store.AttemptTerminationPending(eventCtx, attemptID)
-		if pendingErr != nil {
-			return pendingErr
-		}
-		if pending {
-			hangCtx, hangCancel := context.WithTimeout(ctx, 10*time.Second)
-			_, _ = c.client.Hangup(hangCtx, event.ChannelID())
-			hangCancel()
-		}
-	}
-	return nil
-}
-
-func (c *ARIConsumer) markDisconnected(ctx context.Context) {
+func (c *ARIConsumer) markDisconnected(ctx context.Context) error {
 	dbCtx, cancel := context.WithTimeout(ctx, defaultDBTimeout)
 	defer cancel()
 	if err := c.store.MarkActiveUncertain(dbCtx); err != nil && ctx.Err() == nil {
 		c.log.Error("failed to mark disconnected ARI calls uncertain", "error", err)
+		return err
 	}
+	return ctx.Err()
 }

@@ -71,7 +71,17 @@ func TestEnabledConfigRequiresARI(t *testing.T) {
 	}
 	values["ARI_URL"], values["ARI_APP"] = "https://ari.example", "dialer"
 	values["ARI_USER"], values["ARI_PASSWORD"] = "user", "password"
-	values["ARI_ENDPOINT"] = "carrier"
+	values["ARI_ENDPOINT"] = "PJSIP/%s@outbound"
+	values["EVENT_JOURNAL_DIR"] = "/media/ari-journal"
+	if _, err := loadConfig(configLookup(values)); err == nil {
+		t.Fatal("expected composite ARI endpoint to fail")
+	}
+	values["ARI_ENDPOINT"] = "outbound"
+	delete(values, "EVENT_JOURNAL_DIR")
+	if _, err := loadConfig(configLookup(values)); err == nil {
+		t.Fatal("expected missing event journal path to fail")
+	}
+	values["EVENT_JOURNAL_DIR"] = "/media/ari-journal"
 	if _, err := loadConfig(configLookup(values)); err != nil {
 		t.Fatal(err)
 	}

@@ -42,6 +42,13 @@ func (e ARIEvent) Key(raw []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
+func (e ARIEvent) StateChanging() bool {
+	if e.Type == "ChannelDtmfReceived" {
+		return e.Digit == "9"
+	}
+	return validJournalEventType(e.Type)
+}
+
 func destroyedOutcome(event ARIEvent, attemptState string) string {
 	if attemptState == "ANSWERED" || attemptState == "MESSAGE_STARTED" ||
 		attemptState == "TERMINATING" || attemptState == "UNCERTAIN" {

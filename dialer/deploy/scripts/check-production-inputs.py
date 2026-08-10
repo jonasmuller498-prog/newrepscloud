@@ -10,7 +10,8 @@ import urllib.parse
 FILES = {
     "runtime.env": {
         "DIALING_ENABLED", "CPS", "MAX_CONCURRENCY", "HTTP_ADDR",
-        "METRICS_ADDR", "MEDIA_DIR", "ARI_URL", "ARI_APP", "ARI_ENDPOINT",
+        "METRICS_ADDR", "MEDIA_DIR", "EVENT_JOURNAL_DIR",
+        "ARI_URL", "ARI_APP", "ARI_ENDPOINT",
         "DIALER_SOURCE_REPOSITORY", "DIALER_SOURCE_REF",
     },
     "network.env": {"TRUNK_SIGNAL_CIDR", "TRUNK_MEDIA_CIDR"},
@@ -131,8 +132,9 @@ def check(directory, allow_test):
     runtime, network = data["runtime.env"], data["network.env"]
     fixed = {
         "HTTP_ADDR": ":8080", "METRICS_ADDR": ":9090", "MEDIA_DIR": "/media",
+        "EVENT_JOURNAL_DIR": "/media/ari-journal",
         "ARI_URL": "http://127.0.0.1:8088/ari", "ARI_APP": "voice-dialer",
-        "ARI_ENDPOINT": "PJSIP/%s@outbound",
+        "ARI_ENDPOINT": "outbound",
     }
     if any(runtime[key] != value for key, value in fixed.items()):
         fail("runtime addresses, media path, or direct ARI settings changed")

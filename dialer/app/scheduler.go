@@ -38,6 +38,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) runAsLeader(ctx context.Context, conn *pgxpool.Conn) {
+	defer s.metrics.schedulerEnabled.Store(false)
 	lastPing := time.Time{}
 	for ctx.Err() == nil {
 		if time.Since(lastPing) >= time.Second {
@@ -46,8 +47,10 @@ func (s *Scheduler) runAsLeader(ctx context.Context, conn *pgxpool.Conn) {
 			}
 			lastPing = time.Now()
 		}
-		if !s.store.config.DialingEnabled || s.store.config.CPS <= 0 ||
-			!s.gate.ReadyForDial() {
+		enabled := s.store.config.DialingEnabled && s.store.config.CPS > 0 &&
+			s.gate.ReadyForDial()
+		s.metrics.schedulerEnabled.Store(enabled)
+		if !enabled {
 			s.wait(ctx, 250*time.Millisecond)
 			continue
 		}

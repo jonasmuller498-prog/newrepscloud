@@ -93,6 +93,21 @@ class ProductionOverlayTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_ari_endpoint_must_be_plain_outbound_name(self):
+        with tempfile.TemporaryDirectory() as temp:
+            copy, inputs = self.make_copy(temp)
+            runtime = inputs / "runtime.env"
+            runtime.write_text(runtime.read_text().replace(
+                "ARI_ENDPOINT=outbound", "ARI_ENDPOINT=PJSIP/%s@outbound"
+            ))
+            result = subprocess.run(
+                ["python3", str(copy / "scripts/check-production-inputs.py"),
+                 "--allow-test-net", str(inputs)],
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("direct ARI settings changed", result.stderr)
+
     def test_live_preflight_checks_both_port_fields(self):
         payload = {
             "items": [
