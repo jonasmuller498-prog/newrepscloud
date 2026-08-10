@@ -64,7 +64,7 @@ class DeploymentTests(unittest.TestCase):
             "HTTP_ADDR=:8080", "METRICS_ADDR=:9090", "MEDIA_DIR=/media",
             "EVENT_JOURNAL_DIR=/media/ari-journal",
             "ARI_URL=http://127.0.0.1:8088/ari", "ARI_APP=voice-dialer",
-            "ARI_ENDPOINT=outbound",
+            "ARI_DIAL_CONTEXT=dialer-outbound",
         }
         self.assertTrue(fixed.issubset(set(defaults.splitlines())))
         self.assertEqual(env_keys("base/secrets/app.env.example"), {
@@ -95,9 +95,10 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("astdbdir => /var/lib/asterisk-state", core)
         dialplan = read("base/asterisk/extensions.conf")
         self.assertIn("[reject-inbound]", dialplan)
-        self.assertNotRegex(dialplan, r"\b(?:Dial|Background|Playback|Stasis)\s*\(")
+        self.assertIn("[dialer-outbound]", dialplan)
+        self.assertNotRegex(dialplan, r"\b(?:Background|Playback|Stasis)\s*\(")
         renderer = read("base/scripts/render-config.go")
-        self.assertIn("[outbound]", renderer)
+        self.assertIn("[outbound-primary](outbound-template)", renderer)
         self.assertIn("dtmf_mode=rfc4733", renderer)
         self.assertIn("media_encryption=no", renderer)
         self.assertNotIn("callerid=", renderer.lower())

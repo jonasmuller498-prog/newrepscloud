@@ -17,7 +17,7 @@ MEDIA_DIR=/media
 EVENT_JOURNAL_DIR=/media/ari-journal
 ARI_URL=http://127.0.0.1:8088/ari
 ARI_APP=voice-dialer
-ARI_ENDPOINT=outbound
+ARI_DIAL_CONTEXT=dialer-outbound
 DIALER_SOURCE_REPOSITORY=https://github.com/example/repository.git
 DIALER_SOURCE_REF=1111111111111111111111111111111111111111
 EOF

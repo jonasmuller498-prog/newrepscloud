@@ -55,6 +55,8 @@ spec:
                 name: dialer-ari-secrets
             - secretRef:
                 name: dialer-trunk-secrets
+            - configMapRef:
+                name: dialer-network-values
           resources:
             requests:
               cpu: 50m

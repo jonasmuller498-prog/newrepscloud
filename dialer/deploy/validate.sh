@@ -76,6 +76,7 @@ bash -n "$root/scripts/init-production-inputs.sh"
 bash -n "$root/scripts/init-staging-inputs.sh"
 sh -n "$root/base/postgres/init-runtime.sh"
 python3 - "$root/scripts/check-production-inputs.py" \
+  "$root/scripts/input_rules.py" \
   "$root/scripts/check-staging-inputs.py" \
   "$root/scripts/check-staging-render.py" "$root/scripts/check-live-ports.py" <<'PY'
 import ast, pathlib, sys

@@ -56,8 +56,8 @@ carrier CIDRs, trunk fields, PJSIP transports, or public SIP/RTP Services; use
 the production overlay later and complete all production gates.
 ## 1. Resolve inputs and RKE2 preflight
 Do not start production rendering until owners provide all of:
-- both assigned outbound SBC URIs/ports and explicit digest or IP authentication;
-- both signaling `/32`s and the exact carrier media range;
+- both assigned outbound SBC IPv4 URIs/ports and explicit digest or IP authentication;
+- matching signaling `/32`s for both URIs and the exact carrier media range;
 - approved CPS;
 - authorized US E.164 caller IDs and STIR/SHAKEN treatment;
 - final TTS/audio, campaign consent, calling-window, DNC, and legal inputs; and
@@ -163,18 +163,17 @@ the same file read-only at
 `/var/lib/asterisk/sounds/campaigns/<sha>.wav`.
 
 For each attempt the app validates destination and caller ID as US E.164,
-originates `PJSIP/<destination>@outbound` into the ARI application, and plays
-`sound:campaigns/<sha>`. Verify answer, playback completion, DTMF `9`, and
-durable opt-out state using approved controlled numbers before broad dialing.
-The runtime `ARI_ENDPOINT` value itself must be only `outbound`, because the app
-constructs the complete PJSIP endpoint string.
+originates `Local/<destination>@dialer-outbound/n`, and plays
+`sound:campaigns/<sha>` after the Local channel enters ARI. Verify sequential
+SBC fallback, answer, playback completion, DTMF `9`, and durable opt-out state.
+The runtime `ARI_DIAL_CONTEXT` must be only `dialer-outbound`.
 
 ## 6. Two-stage enablement
 
 First add both reviewed URI/auth fields and set `DIALER_TRUNK_ENABLED=true` in
-the ignored `trunk.env`. Render/review/apply and verify the `outbound` endpoint
-uses ordered, qualified primary/secondary AORs, PCMU/PCMA, RFC4733, and plain
-RTP. Prove secondary selection by making only the primary unreachable.
+the ignored `trunk.env`. Render/review/apply and verify separate, qualified
+primary/secondary endpoints, PCMU/PCMA, RFC4733, and plain RTP. Prove secondary
+selection for both primary unreachability and a temporary SIP failure response.
 Caller ID is intentionally not hardcoded in PJSIP; the app supplies an
 authorized value per attempt. Scheduler settings remain paused.
 

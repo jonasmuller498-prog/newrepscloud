@@ -7,16 +7,21 @@ import (
 
 func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
 	t.Setenv("DIALER_TRUNK_AUTH_MODE", "ip")
-	t.Setenv("DIALER_TRUNK_SIP_URI_PRIMARY", "sip:account@sbc-a.example.net:5060")
-	t.Setenv("DIALER_TRUNK_SIP_URI_SECONDARY", "sip:account@sbc-b.example.net:5060")
+	t.Setenv("DIALER_TRUNK_SIP_URI_PRIMARY", "sip:account@192.0.2.10:5060")
+	t.Setenv("DIALER_TRUNK_SIP_URI_SECONDARY", "sip:account@192.0.2.11:5060")
+	t.Setenv("TRUNK_SIGNAL_CIDR_PRIMARY", "192.0.2.10/32")
+	t.Setenv("TRUNK_SIGNAL_CIDR_SECONDARY", "192.0.2.11/32")
 
 	body := trunkBlock(true)
 	required := []string{
-		"[outbound-primary]",
-		"contact=sip:account@sbc-a.example.net:5060",
-		"[outbound-secondary]",
-		"contact=sip:account@sbc-b.example.net:5060",
-		"aors=outbound-primary,outbound-secondary",
+		"[outbound-primary-aor]",
+		"contact=sip:account@192.0.2.10:5060",
+		"[outbound-secondary-aor]",
+		"contact=sip:account@192.0.2.11:5060",
+		"[outbound-primary](outbound-template)",
+		"aors=outbound-primary-aor",
+		"[outbound-secondary](outbound-template)",
+		"aors=outbound-secondary-aor",
 	}
 	for _, value := range required {
 		if !strings.Contains(body, value) {
@@ -26,7 +31,11 @@ func TestTrunkBlockUsesPrimaryThenSecondary(t *testing.T) {
 	if strings.Count(body, "max_contacts=1") != 2 {
 		t.Fatal("each carrier AOR must be limited to one contact")
 	}
-	if strings.Index(body, "[outbound-primary]") > strings.Index(body, "[outbound-secondary]") {
+	if strings.Contains(body, "aors=outbound-primary,outbound-secondary") {
+		t.Fatal("both SBCs were assigned to one endpoint")
+	}
+	if strings.Index(body, "[outbound-primary-aor]") >
+		strings.Index(body, "[outbound-secondary-aor]") {
 		t.Fatal("secondary AOR precedes the primary AOR")
 	}
 }
@@ -39,6 +48,21 @@ func TestTrunkBlockRejectsDuplicateSBCs(t *testing.T) {
 	defer func() {
 		if recover() == nil {
 			t.Fatal("duplicate SBC URIs were accepted")
+		}
+	}()
+	trunkBlock(true)
+}
+
+func TestTrunkBlockRejectsMismatchedSBCNetwork(t *testing.T) {
+	t.Setenv("DIALER_TRUNK_AUTH_MODE", "ip")
+	t.Setenv("DIALER_TRUNK_SIP_URI_PRIMARY", "sip:192.0.2.10:5060")
+	t.Setenv("DIALER_TRUNK_SIP_URI_SECONDARY", "sip:192.0.2.12:5060")
+	t.Setenv("TRUNK_SIGNAL_CIDR_PRIMARY", "192.0.2.10/32")
+	t.Setenv("TRUNK_SIGNAL_CIDR_SECONDARY", "192.0.2.11/32")
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("SBC URI outside its paired signaling /32 was accepted")
 		}
 	}()
 	trunkBlock(true)

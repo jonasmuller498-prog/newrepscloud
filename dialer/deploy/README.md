@@ -45,13 +45,14 @@ The app receives `DATABASE_URL`, independent operator/approver tokens,
 variables named in the app contract. Defaults are `DIALING_ENABLED=false`,
 `CPS=0`, and `MAX_CONCURRENCY=20`.
 
-`ARI_ENDPOINT` is the plain endpoint name `outbound`; the app constructs
-`PJSIP/<E164>@outbound` directly, originates into Stasis, and plays
-`sound:campaigns/<sha>` through ARI. No intermediary or playback logic remains
-in the dialplan. Uploaded SHA-named WAV files are mode `0640` on the shared
-media PVC;
+`ARI_DIAL_CONTEXT` is the plain context name `dialer-outbound`; the app
+originates `Local/<E164>@dialer-outbound/n`. The internal dialplan tries the
+primary PJSIP endpoint first and advances to the secondary only for
+`CONGESTION` or `CHANUNAVAIL`, never in parallel. The answered Local channel
+enters Stasis and plays `sound:campaigns/<sha>` through ARI. Uploaded SHA-named
+WAV files are mode `0640` on the shared media PVC;
 the aligned Asterisk process reads them at
-`/var/lib/asterisk/sounds/campaigns`. The only dialplan context rejects calls.
+`/var/lib/asterisk/sounds/campaigns`. The provider-facing context rejects calls.
 The app journals redacted ARI state changes under `/media/ari-journal` before
 database projection. That directory shares the Longhorn media PVC and is
 created mode `0750` by an app-UID init container.
@@ -114,12 +115,13 @@ on a shared shell because command arguments can be observable.
 
 The helper deliberately creates only `DIALER_TRUNK_ENABLED=false`; it never
 guesses the carrier's redundant SBC pair, account, auth mode, or caller ID. Add
-both assigned SBCs only after provider review. Caller ID is supplied per
-attempt and must be an app-authorized US E.164 identity.
-Production renders ordered primary and secondary AORs with 30-second OPTIONS
-qualification, so Asterisk selects the secondary only after the primary is
-marked unreachable. The commissioning drill must also test explicit SIP
-failure responses; transport reachability alone does not prove call failover.
+both assigned SBC IPv4 targets only after provider review; each URI must match
+its corresponding signaling `/32`. Caller ID is supplied per attempt and must
+be an app-authorized US E.164 identity.
+Production renders separate, qualified primary and secondary endpoints. The
+dialplan advances after an unavailable route or temporary SIP congestion while
+busy and no-answer remain terminal for that attempt. Commissioning must prove
+both OPTIONS-based outage and explicit temporary SIP-response failover.
 
 ## Required reviews before deployment
 

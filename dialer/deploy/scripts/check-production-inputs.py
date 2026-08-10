@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 import argparse
-import ipaddress
 import pathlib
 import re
-import stat
 import sys
 import urllib.parse
+
+from input_rules import exact, fail, load, public_cidr, sip_target
 
 FILES = {
     "runtime.env": {
         "DIALING_ENABLED", "CPS", "MAX_CONCURRENCY", "HTTP_ADDR",
         "METRICS_ADDR", "MEDIA_DIR", "EVENT_JOURNAL_DIR",
-        "ARI_URL", "ARI_APP", "ARI_ENDPOINT",
+        "ARI_URL", "ARI_APP", "ARI_DIAL_CONTEXT",
         "DIALER_SOURCE_REPOSITORY", "DIALER_SOURCE_REF",
     },
     "network.env": {"TRUNK_SIGNAL_CIDR_PRIMARY", "TRUNK_SIGNAL_CIDR_SECONDARY", "TRUNK_MEDIA_CIDR"},
@@ -29,48 +29,11 @@ TRUNK_KEYS = {
     "DIALER_TRUNK_SIP_URI_PRIMARY", "DIALER_TRUNK_SIP_URI_SECONDARY",
     "DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM",
 }
-KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 HEX64_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$")
-SIP_RE = re.compile(r"^sip:(?:[A-Za-z0-9+_.%-]+@)?[A-Za-z0-9.-]+:[0-9]{2,5}$")
 
-def fail(message):
-    raise ValueError(message)
-
-def load(path):
-    if not path.is_file() or path.is_symlink():
-        fail(f"{path.name} is missing or not a regular file")
-    if stat.S_IMODE(path.stat().st_mode) & 0o077:
-        fail(f"{path.name} must not be group/world accessible")
-    values = {}
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            fail(f"{path.name}:{number} is not KEY=VALUE")
-        key, value = line.split("=", 1)
-        if not KEY_RE.fullmatch(key) or key in values:
-            fail(f"{path.name}:{number} has an invalid or duplicate key")
-        if not value or "\x00" in value or "\r" in value:
-            fail(f"{path.name}:{number} has an empty or unsafe value")
-        if re.search(r"REQUIRED_|CHANGEME|disabled\.invalid", value, re.I):
-            fail(f"{path.name}:{number} contains a placeholder")
-        values[key] = value
-    return values
-
-def exact(values, expected, filename):
-    if set(values) != expected:
-        fail(f"{filename} keys differ: expected {sorted(expected)}, got {sorted(values)}")
-
-def public_cidr(value, allow_test):
-    network = ipaddress.ip_network(value, strict=True)
-    if network.version != 4:
-        fail("carrier CIDRs must be IPv4")
-    if not allow_test and not network.is_global:
-        fail("carrier CIDRs must be canonical public networks")
 
 def check_database(admin, runtime):
     if admin["POSTGRES_USER"] != "postgres":
@@ -93,7 +56,8 @@ def check_database(admin, runtime):
     if url.path != "/" + runtime["DB_NAME"] or url.query != "sslmode=disable":
         fail("DATABASE_URL database or sslmode is invalid")
 
-def check_trunk(values):
+
+def check_trunk(values, signals):
     if values.get("DIALER_TRUNK_ENABLED") not in {"true", "false"}:
         fail("DIALER_TRUNK_ENABLED must be true or false")
     if not set(values).issubset(TRUNK_KEYS):
@@ -109,9 +73,9 @@ def check_trunk(values):
     uris = (values["DIALER_TRUNK_SIP_URI_PRIMARY"], values["DIALER_TRUNK_SIP_URI_SECONDARY"])
     if uris[0] == uris[1]:
         fail("outbound SBC URIs must be distinct")
-    blocked = r"(?:\.(?:invalid|example|test|localhost)|@localhost|sip:localhost)(?::|$)"
-    if any(not SIP_RE.fullmatch(uri) or re.search(blocked, uri) for uri in uris):
-        fail("trunk SIP URIs must be exact sip:[account@]host:port targets")
+    targets = tuple(sip_target(uri) for uri in uris)
+    if any(target != signal.network_address for target, signal in zip(targets, signals)):
+        fail("each trunk SIP target must match its paired signaling /32")
     if values["DIALER_TRUNK_AUTH_MODE"] == "digest":
         for key in ("DIALER_TRUNK_USERNAME", "DIALER_TRUNK_PASSWORD", "DIALER_TRUNK_REALM"):
             if not values.get(key):
@@ -126,13 +90,12 @@ def check(directory, allow_test):
         data[filename] = load(directory / filename)
         exact(data[filename], keys, filename)
     trunk = load(directory / "trunk.env")
-    check_trunk(trunk)
     runtime, network = data["runtime.env"], data["network.env"]
     fixed = {
         "HTTP_ADDR": ":8080", "METRICS_ADDR": ":9090", "MEDIA_DIR": "/media",
         "EVENT_JOURNAL_DIR": "/media/ari-journal",
         "ARI_URL": "http://127.0.0.1:8088/ari", "ARI_APP": "voice-dialer",
-        "ARI_ENDPOINT": "outbound",
+        "ARI_DIAL_CONTEXT": "dialer-outbound",
     }
     if any(runtime[key] != value for key, value in fixed.items()):
         fail("runtime addresses, media path, or direct ARI settings changed")
@@ -148,10 +111,14 @@ def check(directory, allow_test):
         fail("DIALER_SOURCE_REF must be a lowercase immutable commit SHA")
     if not allow_test and len(set(ref)) == 1:
         fail("DIALER_SOURCE_REF looks like a placeholder")
-    for value in network.values():
-        public_cidr(value, allow_test)
-    if network["TRUNK_SIGNAL_CIDR_PRIMARY"] == network["TRUNK_SIGNAL_CIDR_SECONDARY"]:
+    signals = tuple(public_cidr(network[key], allow_test) for key in (
+        "TRUNK_SIGNAL_CIDR_PRIMARY", "TRUNK_SIGNAL_CIDR_SECONDARY"))
+    public_cidr(network["TRUNK_MEDIA_CIDR"], allow_test)
+    if any(signal.prefixlen != 32 for signal in signals):
+        fail("carrier signaling CIDRs must be exact IPv4 /32 networks")
+    if signals[0] == signals[1]:
         fail("carrier signaling CIDRs must be distinct")
+    check_trunk(trunk, signals)
     app, ari = data["app.env"], data["ari.env"]
     if any(not HEX64_RE.fullmatch(value) for value in app.values()):
         fail("application secrets must be independent 64-character hex values")

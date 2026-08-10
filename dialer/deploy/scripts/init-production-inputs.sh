@@ -18,17 +18,20 @@ read -r -p "Reviewed 40-character source commit SHA: " source_ref
   exit 64
 }
 
-read -r -p "Primary carrier signaling CIDR (/32 preferred): " signal_cidr_primary
-read -r -p "Secondary carrier signaling CIDR (/32 preferred): " signal_cidr_secondary
+read -r -p "Primary carrier signaling IPv4 /32: " signal_cidr_primary
+read -r -p "Secondary carrier signaling IPv4 /32: " signal_cidr_secondary
 read -r -p "Exact carrier media CIDR: " media_cidr
-for cidr in "$signal_cidr_primary" "$signal_cidr_secondary" "$media_cidr"; do
-  python3 - "$cidr" <<'PY'
+python3 - "$signal_cidr_primary" "$signal_cidr_secondary" "$media_cidr" <<'PY'
 import ipaddress, sys
-network = ipaddress.ip_network(sys.argv[1], strict=True)
-if network.version != 4 or not network.is_global:
-    raise SystemExit("carrier CIDRs must be canonical public IPv4 networks")
+signals = [ipaddress.ip_network(value, strict=True) for value in sys.argv[1:3]]
+media = ipaddress.ip_network(sys.argv[3], strict=True)
+if any(item.version != 4 or not item.is_global or item.prefixlen != 32 for item in signals):
+    raise SystemExit("carrier signaling CIDRs must be distinct public IPv4 /32 networks")
+if signals[0] == signals[1]:
+    raise SystemExit("carrier signaling CIDRs must be distinct public IPv4 /32 networks")
+if media.version != 4 or not media.is_global:
+    raise SystemExit("carrier media CIDR must be a canonical public IPv4 network")
 PY
-done
 
 read -r -p "PostgreSQL database name: " pg_db
 read -r -p "PostgreSQL runtime role: " runtime_user
@@ -65,7 +68,7 @@ printf '%s\n' \
   'HTTP_ADDR=:8080' 'METRICS_ADDR=:9090' \
   'MEDIA_DIR=/media' 'EVENT_JOURNAL_DIR=/media/ari-journal' \
   'ARI_URL=http://127.0.0.1:8088/ari' \
-  'ARI_APP=voice-dialer' 'ARI_ENDPOINT=outbound' \
+  'ARI_APP=voice-dialer' 'ARI_DIAL_CONTEXT=dialer-outbound' \
   'DIALER_SOURCE_REPOSITORY=https://github.com/jonasmuller498-prog/newrepscloud.git' \
   "DIALER_SOURCE_REF=${source_ref,,}" >"$out/runtime.env"
 printf '%s\n' "TRUNK_SIGNAL_CIDR_PRIMARY=$signal_cidr_primary" \

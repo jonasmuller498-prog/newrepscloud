@@ -5,8 +5,9 @@ migrations, elects one scheduler, enforces fixed call slots and database-time CP
 delivers a transactional ARI outbox, consumes ARI events, reconciles state, and
 exports Prometheus text metrics.
 
-Calls originate directly to `PJSIP/<E164>@<ARI_ENDPOINT>` with Stasis `app` and
-`appArgs` only. Once answered in Stasis, ARI plays
+Calls originate to `Local/<E164>@<ARI_DIAL_CONTEXT>/n` with Stasis `app` and
+`appArgs` only. The internal dialplan tries carrier SBCs sequentially without
+parallel ringing. Once answered in Stasis, ARI plays
 `sound:campaigns/<approved-sha>` with a deterministic playback ID. Completion or
 DTMF `9` queues an ARI hangup, while the fixed slot remains held until terminal
 event or channel-absence reconciliation.
@@ -52,7 +53,7 @@ answered or message-started calls are quarantined instead of automatically retri
 | `MEDIA_DIR` | `/var/lib/dialer/media` |
 | `ARI_URL` | ARI server base URL, required when dialing is enabled |
 | `ARI_APP`, `ARI_USER`, `ARI_PASSWORD` | Required when dialing is enabled |
-| `ARI_ENDPOINT` | Plain PJSIP endpoint name; deployment value is `outbound` |
+| `ARI_DIAL_CONTEXT` | Plain Local-channel context; deployment value is `dialer-outbound` |
 | `EVENT_JOURNAL_DIR` | Required writable absolute path when dialing is enabled |
 | `OPERATOR_API_TOKEN` | Required high-entropy token of at least 32 bytes |
 | `APPROVER_API_TOKEN` | Required high-entropy token; must differ from operator |

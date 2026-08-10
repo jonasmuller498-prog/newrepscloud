@@ -43,7 +43,7 @@ func distinctKeys(keys ...[]byte) bool {
 	return true
 }
 
-func validEndpointName(value string) bool {
+func validRouteName(value string) bool {
 	if value == "" || len(value) > 128 {
 		return false
 	}

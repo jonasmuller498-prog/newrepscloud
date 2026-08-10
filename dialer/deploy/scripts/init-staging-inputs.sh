@@ -40,7 +40,7 @@ printf '%s\n' \
   'HTTP_ADDR=:8080' 'METRICS_ADDR=:9090' \
   'MEDIA_DIR=/media' 'EVENT_JOURNAL_DIR=/media/ari-journal' \
   'ARI_URL=http://127.0.0.1:8088/ari' \
-  'ARI_APP=voice-dialer' 'ARI_ENDPOINT=outbound' \
+  'ARI_APP=voice-dialer' 'ARI_DIAL_CONTEXT=dialer-outbound' \
   'DIALER_SOURCE_REPOSITORY=https://github.com/jonasmuller498-prog/newrepscloud.git' \
   "DIALER_SOURCE_REF=${source_ref,,}" >"$stage/runtime.env"
 printf '%s\n' \

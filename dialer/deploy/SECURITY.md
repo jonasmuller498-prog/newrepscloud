@@ -5,19 +5,19 @@
 The placeholder base is intentionally non-operational: it generates no Secrets,
 so neither PostgreSQL nor the engine can start. Production rendering requires
 eight ignored mode-`0600` input files. Validation rejects missing, malformed, or
-placeholder values and a non-commit source ref. The `outbound` endpoint is not
-emitted unless `DIALER_TRUNK_ENABLED=true`; dialing independently defaults false
-with zero CPS.
+placeholder values and a non-commit source ref. Carrier endpoints are not emitted
+unless `DIALER_TRUNK_ENABLED=true`; dialing independently defaults false with zero
+CPS.
 
 The app validates each destination and caller ID as `+1` plus ten digits,
-enforces concurrency/CPS, and originates the direct
-`PJSIP/<destination>@outbound` channel through loopback ARI. It then plays
-`sound:campaigns/<sha>` and handles DTMF/lifecycle events through ARI. Asterisk
-has no outbound playback logic, generic PSTN context, recording, or AMD.
+enforces concurrency/CPS, and originates a controlled Local channel through
+loopback ARI. Asterisk routes it sequentially across the assigned SBC pair; ARI
+then plays `sound:campaigns/<sha>` and handles DTMF/lifecycle events. Asterisk has
+no generic PSTN context, recording, or AMD.
 
-The only dialplan context immediately rejects unsolicited calls. The provider
-endpoint uses that defensive context, and no identify or registration section
-accepts inbound campaign traffic.
+Provider endpoints use a context that rejects unsolicited calls. The internal
+dialer context accepts only E.164 Local-channel targets, and no identify or
+registration section accepts inbound campaign traffic.
 
 ## Asterisk and provider
 
@@ -26,13 +26,14 @@ accepts inbound campaign traffic.
   (`alaw`) plus RFC4733 DTMF. The app supplies a reviewed caller ID per call.
 - `digest` mode emits outbound auth. `ip` mode emits no auth object. Neither
   mode enables inbound campaign routes or provider registration.
-- Both exact assigned URIs must be `sip:[account@]sbc:port`; the renderer
-  rejects duplicate, `.invalid`, empty, and placeholder targets.
-- Set both signaling `/32`s and the media CIDR to account-specific provider
-  values. Do not infer SBCs from a brand-level hostname.
-- Asterisk qualifies two ordered AORs every 30 seconds. This covers a primary
-  SBC that is marked unreachable; it does not claim transparent retry after an
-  explicit SIP rejection. Verify both cases during the controlled pilot.
+- Both exact assigned URIs must be `sip:[account@]IPv4:port`; the renderer
+  rejects duplicate, mismatched, empty, and non-IP targets.
+- Set each signaling `/32` to the IPv4 in its paired URI and set the media CIDR
+  to the account-specific provider range. Do not infer SBCs from a brand-level
+  hostname.
+- Asterisk qualifies both SBCs every 30 seconds. The internal dialplan retries
+  the secondary sequentially only for `CONGESTION` or `CHANUNAVAIL`; it never
+  forks duplicate calls. Verify outage and temporary-response paths in pilot.
 
 The app and Asterisk run as UID/GID 1000 with pod `fsGroup: 1000`. The app
 writes the Longhorn media PVC at `/media`; Asterisk mounts the same claim

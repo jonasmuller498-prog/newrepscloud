@@ -62,11 +62,12 @@ func (c *ARIClient) Originate(ctx context.Context, cmd OriginateCommand) (Origin
 			fmt.Errorf("invalid originate caller ID: %w", err)
 	}
 	query := url.Values{}
-	query.Set("endpoint", "PJSIP/"+phone+"@"+c.config.ARIEndpoint)
+	query.Set("endpoint", "Local/"+phone+"@"+c.config.ARIDialContext+"/n")
 	query.Set("app", c.config.ARIApp)
 	query.Set("appArgs", cmd.AttemptID)
 	query.Set("callerId", callerID)
 	query.Set("channelId", cmd.ChannelID)
+	query.Set("timeout", "90")
 	body, _ := json.Marshal(map[string]any{"variables": map[string]string{
 		"DIALER_ATTEMPT_ID": cmd.AttemptID,
 	}})

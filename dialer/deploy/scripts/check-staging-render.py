@@ -21,7 +21,7 @@ RUNTIME = {
     "HTTP_ADDR": ":8080", "METRICS_ADDR": ":9090", "MEDIA_DIR": "/media",
     "EVENT_JOURNAL_DIR": "/media/ari-journal",
     "ARI_URL": "http://127.0.0.1:8088/ari", "ARI_APP": "voice-dialer",
-    "ARI_ENDPOINT": "outbound",
+    "ARI_DIAL_CONTEXT": "dialer-outbound",
     "DIALER_SOURCE_REPOSITORY":
         "https://github.com/jonasmuller498-prog/newrepscloud.git",
 }
@@ -137,7 +137,8 @@ def check(items):
 
     asterisk = one(items, "ConfigMap", prefix="asterisk-config-").get("data", {})
     pjsip = asterisk.get("pjsip.conf", "")
-    if any(value in pjsip for value in ("[outbound]", "type=endpoint", "type=transport", "bind=")):
+    if any(value in pjsip for value in ("[outbound-primary", "[outbound-secondary",
+                                       "type=endpoint", "type=transport", "bind=")):
         fail("Asterisk staging config contains a network transport or endpoint")
     if "@@" in pjsip or "bindaddr=127.0.0.1" not in asterisk.get("http.conf", ""):
         fail("Asterisk config has unresolved tokens or non-loopback ARI")

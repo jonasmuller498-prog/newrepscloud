@@ -11,6 +11,22 @@ CREATE = ROOT / "tests/create-test-inputs.sh"
 CHECK = ROOT / "scripts/check-production-inputs.py"
 
 
+def decode_resources(rendered):
+    command = ["kubectl", "create", "--dry-run=client", "--validate=false",
+               "-f", "-", "-o", "json"]
+    raw = subprocess.run(
+        command, input=rendered, check=True, text=True, capture_output=True
+    ).stdout
+    decoder, resources, offset = json.JSONDecoder(), [], 0
+    while offset < len(raw):
+        while offset < len(raw) and raw[offset].isspace():
+            offset += 1
+        if offset < len(raw):
+            resource, offset = decoder.raw_decode(raw, offset)
+            resources.append(resource)
+    return resources
+
+
 class ProductionOverlayTests(unittest.TestCase):
     def make_copy(self, temp):
         copy = pathlib.Path(temp) / "deploy"
@@ -39,9 +55,22 @@ class ProductionOverlayTests(unittest.TestCase):
                 self.assertIn("name: dialer-postgres-runtime-", rendered)
                 self.assertIn("name: dialer-app-secrets-", rendered)
                 self.assertIn("voice-dialer.obvious.tech/backup-status: unconfigured-suspended", rendered)
-                self.assertGreaterEqual(rendered.count("192.0.2.10/32"), 2)
-                self.assertGreaterEqual(rendered.count("192.0.2.11/32"), 2)
-                self.assertGreaterEqual(rendered.count("198.51.100.0/24"), 2)
+                resources = {
+                    (item["kind"], item["metadata"]["name"]): item
+                    for item in decode_resources(rendered)
+                }
+                carrier = resources[("NetworkPolicy", "allow-carrier-ingress")]["spec"]["ingress"]
+                engine = resources[("NetworkPolicy", "allow-engine-egress")]["spec"]["egress"]
+                self.assertEqual(
+                    [item["ipBlock"]["cidr"] for item in carrier[0]["from"]],
+                    ["192.0.2.10/32", "192.0.2.11/32"],
+                )
+                self.assertEqual(
+                    [item["ipBlock"]["cidr"] for item in engine[3]["to"]],
+                    ["192.0.2.10/32", "192.0.2.11/32"],
+                )
+                self.assertEqual(carrier[1]["from"][0]["ipBlock"]["cidr"], "198.51.100.0/24")
+                self.assertEqual(engine[4]["to"][0]["ipBlock"]["cidr"], "198.51.100.0/24")
                 if overlay == "production-backups":
                     self.assertIn("name: postgres-logical-restore", rendered)
                     self.assertRegex(
@@ -85,8 +114,8 @@ class ProductionOverlayTests(unittest.TestCase):
             (inputs / "trunk.env").write_text(
                 "DIALER_TRUNK_ENABLED=true\n"
                 "DIALER_TRUNK_AUTH_MODE=ip\n"
-                "DIALER_TRUNK_SIP_URI_PRIMARY=sip:account@192.0.2.20:5060\n"
-                "DIALER_TRUNK_SIP_URI_SECONDARY=sip:account@192.0.2.21:5060\n"
+                "DIALER_TRUNK_SIP_URI_PRIMARY=sip:account@192.0.2.10:5060\n"
+                "DIALER_TRUNK_SIP_URI_SECONDARY=sip:account@192.0.2.11:5060\n"
             )
             result = subprocess.run(
                 ["python3", str(copy / "scripts/check-production-inputs.py"),
@@ -95,7 +124,8 @@ class ProductionOverlayTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             trunk = inputs / "trunk.env"
-            trunk.write_text(trunk.read_text().replace("192.0.2.21", "192.0.2.20"))
+            valid = trunk.read_text()
+            trunk.write_text(valid.replace("192.0.2.11", "192.0.2.10"))
             duplicate = subprocess.run(
                 ["python3", str(copy / "scripts/check-production-inputs.py"),
                  "--allow-test-net", str(inputs)],
@@ -103,13 +133,34 @@ class ProductionOverlayTests(unittest.TestCase):
             )
             self.assertNotEqual(duplicate.returncode, 0)
             self.assertIn("SBC URIs must be distinct", duplicate.stderr)
+            trunk.write_text(valid.replace("192.0.2.11", "192.0.2.12"))
+            mismatched = subprocess.run(
+                ["python3", str(copy / "scripts/check-production-inputs.py"),
+                 "--allow-test-net", str(inputs)],
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(mismatched.returncode, 0)
+            self.assertIn("paired signaling /32", mismatched.stderr)
+            trunk.write_text(valid)
+            network = inputs / "network.env"
+            network.write_text(network.read_text().replace(
+                "192.0.2.10/32", "192.0.2.10/31"
+            ))
+            broad = subprocess.run(
+                ["python3", str(copy / "scripts/check-production-inputs.py"),
+                 "--allow-test-net", str(inputs)],
+                text=True, capture_output=True,
+            )
+            self.assertNotEqual(broad.returncode, 0)
+            self.assertIn("exact IPv4 /32", broad.stderr)
 
-    def test_ari_endpoint_must_be_plain_outbound_name(self):
+    def test_ari_dial_context_must_be_plain_name(self):
         with tempfile.TemporaryDirectory() as temp:
             copy, inputs = self.make_copy(temp)
             runtime = inputs / "runtime.env"
             runtime.write_text(runtime.read_text().replace(
-                "ARI_ENDPOINT=outbound", "ARI_ENDPOINT=PJSIP/%s@outbound"
+                "ARI_DIAL_CONTEXT=dialer-outbound",
+                "ARI_DIAL_CONTEXT=Local/%s@dialer-outbound",
             ))
             result = subprocess.run(
                 ["python3", str(copy / "scripts/check-production-inputs.py"),

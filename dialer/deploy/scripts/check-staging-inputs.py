@@ -8,7 +8,7 @@ FILES = {
     "runtime.env": {
         "DIALING_ENABLED", "CPS", "MAX_CONCURRENCY", "HTTP_ADDR",
         "METRICS_ADDR", "MEDIA_DIR", "EVENT_JOURNAL_DIR", "ARI_URL",
-        "ARI_APP", "ARI_ENDPOINT", "DIALER_SOURCE_REPOSITORY",
+        "ARI_APP", "ARI_DIAL_CONTEXT", "DIALER_SOURCE_REPOSITORY",
         "DIALER_SOURCE_REF",
     },
     "safety.env": {
@@ -33,7 +33,7 @@ RUNTIME = {
     "EVENT_JOURNAL_DIR": "/media/ari-journal",
     "ARI_URL": "http://127.0.0.1:8088/ari",
     "ARI_APP": "voice-dialer",
-    "ARI_ENDPOINT": "outbound",
+    "ARI_DIAL_CONTEXT": "dialer-outbound",
     "DIALER_SOURCE_REPOSITORY":
         "https://github.com/jonasmuller498-prog/newrepscloud.git",
 }

@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +34,34 @@ func configValue(value string) string {
 	return strings.ReplaceAll(value, ";", `\;`)
 }
 
+func sipTarget(uri string) netip.Addr {
+	if !uriRE.MatchString(uri) {
+		panic("outbound SBC URIs must be exact sip:[user@]IPv4:port targets")
+	}
+	target := strings.TrimPrefix(uri, "sip:")
+	if index := strings.LastIndex(target, "@"); index >= 0 {
+		target = target[index+1:]
+	}
+	host, portText, err := net.SplitHostPort(target)
+	if err != nil {
+		panic("outbound SBC URIs must contain valid IPv4 targets and ports")
+	}
+	address, addressErr := netip.ParseAddr(host)
+	port, portErr := strconv.Atoi(portText)
+	if addressErr != nil || !address.Is4() || portErr != nil || port < 1 || port > 65535 {
+		panic("outbound SBC URIs must contain valid IPv4 targets and ports")
+	}
+	return address
+}
+
+func signalTarget(name string) netip.Addr {
+	prefix, err := netip.ParsePrefix(required(name))
+	if err != nil || !prefix.Addr().Is4() || prefix.Bits() != 32 {
+		panic(name + " must be an exact IPv4 /32")
+	}
+	return prefix.Addr()
+}
+
 func trunkBlock(enabled bool) string {
 	if !enabled {
 		return "; Trunk intentionally absent while DIALER_TRUNK_ENABLED=false"
@@ -46,10 +77,13 @@ func trunkBlock(enabled bool) string {
 	if uris[0] == uris[1] {
 		panic("outbound SBC URIs must be distinct")
 	}
-	for _, uri := range uris {
-		if !uriRE.MatchString(uri) || strings.Contains(uri, ".invalid:") ||
-			strings.Contains(uri, ".example:") || strings.Contains(uri, "localhost:") {
-			panic("outbound SBC URIs must be exact sip:[user@]host:port targets")
+	signals := []netip.Addr{
+		signalTarget("TRUNK_SIGNAL_CIDR_PRIMARY"),
+		signalTarget("TRUNK_SIGNAL_CIDR_SECONDARY"),
+	}
+	for index, uri := range uris {
+		if sipTarget(uri) != signals[index] {
+			panic("each outbound SBC URI must match its paired signaling /32")
 		}
 	}
 	authLine, authSection := "", ""
@@ -67,27 +101,26 @@ password=%s
 realm=%s
 `, user, password, realm)
 	}
-	return fmt.Sprintf(`[outbound-primary]
+	return fmt.Sprintf(`[outbound-primary-aor]
 type=aor
 contact=%s
 qualify_timeout=3.0
 qualify_frequency=30
 max_contacts=1
 
-[outbound-secondary]
+[outbound-secondary-aor]
 type=aor
 contact=%s
 qualify_timeout=3.0
 qualify_frequency=30
 max_contacts=1
 
-[outbound]
+[outbound-template](!)
 type=endpoint
 transport=transport-udp
 context=reject-inbound
 disallow=all
 allow=ulaw,alaw
-aors=outbound-primary,outbound-secondary
 %sdtmf_mode=rfc4733
 direct_media=no
 force_rport=yes
@@ -98,6 +131,12 @@ send_pai=yes
 send_rpid=no
 trust_id_outbound=yes
 timers=yes
+
+[outbound-primary](outbound-template)
+aors=outbound-primary-aor
+
+[outbound-secondary](outbound-template)
+aors=outbound-secondary-aor
 %s`, configValue(uris[0]), configValue(uris[1]), authLine, authSection)
 }
 

@@ -15,7 +15,7 @@ import (
 type Config struct {
 	HTTPAddr, MetricsAddr, DatabaseURL, MediaDir, EventJournalDir string
 	ARIURL, ARIApp, ARIUser, ARIPassword                          string
-	ARIEndpoint, OperatorToken, ApproverToken                     string
+	ARIDialContext, OperatorToken, ApproverToken                  string
 	PhoneHashKey, FieldEncryptionKey                              []byte
 	AuditHMACKey                                                  []byte
 	DialingEnabled                                                bool
@@ -39,7 +39,7 @@ func loadConfig(get func(string) (string, bool)) (Config, error) {
 		ARIApp:           value(get, "ARI_APP", ""),
 		ARIUser:          value(get, "ARI_USER", ""),
 		ARIPassword:      value(get, "ARI_PASSWORD", ""),
-		ARIEndpoint:      value(get, "ARI_ENDPOINT", ""),
+		ARIDialContext:   value(get, "ARI_DIAL_CONTEXT", ""),
 		OperatorToken:    value(get, "OPERATOR_API_TOKEN", ""),
 		ApproverToken:    value(get, "APPROVER_API_TOKEN", ""),
 		MaxBodyBytes:     20 << 20,
@@ -106,7 +106,7 @@ func (c Config) Validate() error {
 	}
 	if c.DialingEnabled {
 		if c.ARIURL == "" || c.ARIApp == "" || c.ARIUser == "" ||
-			c.ARIPassword == "" || !validEndpointName(c.ARIEndpoint) {
+			c.ARIPassword == "" || !validRouteName(c.ARIDialContext) {
 			return errors.New("ARI settings are required when dialing is enabled")
 		}
 		if !filepath.IsAbs(c.EventJournalDir) ||

@@ -8,6 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ASTERISK = ROOT / "base/asterisk"
 REQUIRED_MODULES = (
     "pbx_config.so",
+    "app_dial.so",
     "res_sorcery_config.so",
     "res_sorcery_memory.so",
     "res_sorcery_astdb.so",
@@ -137,6 +138,15 @@ class AsteriskHardeningTests(unittest.TestCase):
         for extension in ("_X!", "_+X!", "s", "i", "h"):
             self.assertRegex(body, rf"(?m)^exten => {re.escape(extension)},1,")
 
+    def test_outbound_dialplan_fails_over_sequentially(self):
+        body = read("base/asterisk/extensions.conf")
+        primary = "Dial(PJSIP/${EXTEN}@outbound-primary,45)"
+        secondary = "Dial(PJSIP/${EXTEN}@outbound-secondary,45)"
+        self.assertLess(body.index(primary), body.index(secondary))
+        self.assertIn('"${DIALSTATUS}"="CONGESTION"', body)
+        self.assertIn('"${DIALSTATUS}"="CHANUNAVAIL"', body)
+        self.assertNotIn(f"{primary}&", body)
+
     def test_asterisk_has_no_broad_state_mount(self):
         body = "\n".join(path.read_text() for path in ROOT.rglob("*.yaml"))
         self.assertNotRegex(
@@ -148,10 +158,18 @@ class AsteriskHardeningTests(unittest.TestCase):
         self.assertEqual(re.findall(r"(?m)^allow=([a-z0-9,]+)$", body), ["ulaw,alaw"])
         self.assertIn('required("DIALER_TRUNK_SIP_URI_PRIMARY")', body)
         self.assertIn('required("DIALER_TRUNK_SIP_URI_SECONDARY")', body)
-        self.assertIn("[outbound-primary]", body)
-        self.assertIn("[outbound-secondary]", body)
-        self.assertIn("aors=outbound-primary,outbound-secondary", body)
+        self.assertIn("[outbound-primary-aor]", body)
+        self.assertIn("[outbound-secondary-aor]", body)
+        self.assertIn("aors=outbound-primary-aor", body)
+        self.assertIn("aors=outbound-secondary-aor", body)
+        self.assertNotIn("aors=outbound-primary,outbound-secondary", body)
         self.assertEqual(body.count("max_contacts=1"), 2)
+        self.assertIn('signalTarget("TRUNK_SIGNAL_CIDR_PRIMARY")', body)
+        self.assertIn('signalTarget("TRUNK_SIGNAL_CIDR_SECONDARY")', body)
+        self.assertIn(
+            "name: dialer-network-values",
+            read("base/engine/statefulset-init.yaml"),
+        )
 
 
 if __name__ == "__main__":
