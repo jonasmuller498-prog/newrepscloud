@@ -79,7 +79,10 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("cd /workspace/source/dialer/app", build)
         self.assertRegex(build, r"go build [^\n]* \.")
         self.assertIn("chmod 0555 /app-bin/dialer.tmp", build)
-        self.assertIn("static-debian12:nonroot@", read("base/engine/statefulset.yaml"))
+        statefulset = read("base/engine/statefulset.yaml")
+        self.assertIn("static-debian12:nonroot@", statefulset)
+        self.assertIn("sizeLimit: 1Gi", statefulset)
+        self.assertIn("GOMODCACHE", read("base/engine/statefulset-init.yaml"))
         self.assertIn("immutable: true", read("overlays/production/kustomization.yaml"))
 
     def test_direct_ari_and_shared_media_are_coherent(self):

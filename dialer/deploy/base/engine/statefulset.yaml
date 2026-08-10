@@ -55,7 +55,7 @@ spec:
             sizeLimit: 1Gi
         - name: tmp
           emptyDir:
-            sizeLimit: 256Mi
+            sizeLimit: 1Gi
         - name: asterisk-run
           emptyDir:
             sizeLimit: 16Mi
