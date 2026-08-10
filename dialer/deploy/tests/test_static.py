@@ -85,7 +85,9 @@ class DeploymentTests(unittest.TestCase):
     def test_direct_ari_and_shared_media_are_coherent(self):
         self.assertIn("bindaddr=127.0.0.1", read("base/asterisk/http.conf"))
         self.assertIn("sessionlimit=150", read("base/asterisk/http.conf"))
-        self.assertIn("maxcalls = 150", read("base/asterisk/asterisk.conf"))
+        core = read("base/asterisk/asterisk.conf")
+        self.assertIn("maxcalls = 150", core)
+        self.assertIn("astdbdir => /var/lib/asterisk-state", core)
         dialplan = read("base/asterisk/extensions.conf")
         self.assertIn("[reject-inbound]", dialplan)
         self.assertNotRegex(dialplan, r"\b(?:Dial|Background|Playback|Stasis)\s*\(")
@@ -103,6 +105,8 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("mkdir -p /media/ari-journal", init)
         self.assertIn("name: prepare-shared-storage", init)
         self.assertIn("mountPath: /var/lib/asterisk/sounds/campaigns", asterisk)
+        self.assertIn("mountPath: /var/lib/asterisk-state", asterisk)
+        self.assertNotIn("mountPath: /var/lib/asterisk\n", asterisk)
         services = "\n".join(path.read_text() for path in (ROOT / "base/engine").glob("service-*.yaml"))
         self.assertNotIn("8088", services)
 

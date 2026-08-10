@@ -60,6 +60,6 @@ spec:
             - name: asterisk-run
               mountPath: /var/run/asterisk
             - name: asterisk-state
-              mountPath: /var/lib/asterisk
+              mountPath: /var/lib/asterisk-state
             - name: tmp
               mountPath: /tmp
