@@ -16,7 +16,7 @@ if [[ ! "$DIALER_SOURCE_REF" =~ ^[0-9a-fA-F]{40}$ ]] ||
 fi
 
 rm -rf /workspace/source
-GIT_TERMINAL_PROMPT=0 git clone --quiet --no-checkout \
+GIT_TERMINAL_PROMPT=0 git clone --quiet --depth=1 --filter=blob:none --no-checkout \
   "$DIALER_SOURCE_REPOSITORY" /workspace/source
 cd /workspace/source
 GIT_TERMINAL_PROMPT=0 git fetch --quiet --depth=1 origin "$DIALER_SOURCE_REF"

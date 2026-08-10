@@ -40,7 +40,8 @@ func trunkBlock(enabled bool) string {
 		panic("DIALER_TRUNK_AUTH_MODE must be exactly digest or ip")
 	}
 	uri := required("DIALER_TRUNK_SIP_URI")
-	if !uriRE.MatchString(uri) || strings.Contains(uri, ".invalid:") {
+	if !uriRE.MatchString(uri) || strings.Contains(uri, ".invalid:") ||
+		strings.Contains(uri, ".example:") || strings.Contains(uri, "localhost:") {
 		panic("DIALER_TRUNK_SIP_URI must be an exact sip:[user@]host:port target")
 	}
 	authLine, authSection := "", ""

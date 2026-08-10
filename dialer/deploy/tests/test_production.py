@@ -38,8 +38,14 @@ class ProductionOverlayTests(unittest.TestCase):
                 self.assertIn("name: dialer-postgres-admin-", rendered)
                 self.assertIn("name: dialer-postgres-runtime-", rendered)
                 self.assertIn("name: dialer-app-secrets-", rendered)
+                self.assertIn("voice-dialer.obvious.tech/backup-status: unconfigured-suspended", rendered)
+                self.assertGreaterEqual(rendered.count("192.0.2.10/32"), 2)
+                self.assertGreaterEqual(rendered.count("198.51.100.0/24"), 2)
                 if overlay == "production-backups":
                     self.assertIn("name: postgres-logical-restore", rendered)
+                    self.assertRegex(
+                        rendered, r"name: dialer-postgres-runtime-[a-z0-9]+\n"
+                    )
 
     def test_missing_or_unsafe_inputs_fail_validation(self):
         missing = subprocess.run(
@@ -60,6 +66,32 @@ class ProductionOverlayTests(unittest.TestCase):
             )
             self.assertNotEqual(unsafe.returncode, 0)
             self.assertIn("enabled exact trunk", unsafe.stderr)
+
+    def test_all_enablement_gates_are_required_together(self):
+        with tempfile.TemporaryDirectory() as temp:
+            copy, inputs = self.make_copy(temp)
+            runtime = inputs / "runtime.env"
+            runtime.write_text(
+                runtime.read_text()
+                .replace("DIALING_ENABLED=false", "DIALING_ENABLED=true")
+                .replace("CPS=0", "CPS=1")
+            )
+            (inputs / "safety.env").write_text(
+                "BACKUP_STATUS=configured-suspended\n"
+                "BACKUP_DESTINATION=NONPRODUCTION_TEST_DESTINATION\n"
+                "BACKUP_ACKNOWLEDGED=true\n"
+            )
+            (inputs / "trunk.env").write_text(
+                "DIALER_TRUNK_ENABLED=true\n"
+                "DIALER_TRUNK_AUTH_MODE=ip\n"
+                "DIALER_TRUNK_SIP_URI=sip:account@192.0.2.20:5060\n"
+            )
+            result = subprocess.run(
+                ["python3", str(copy / "scripts/check-production-inputs.py"),
+                 "--allow-test-net", str(inputs)],
+                text=True, capture_output=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_live_preflight_checks_both_port_fields(self):
         payload = {
